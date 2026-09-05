@@ -1,0 +1,11 @@
+[versions]
+kotlin      = "2.1.0"
+kct         = "0.7.0"   # kotlin-compile-testing fork targeting Kotlin 2.1.0
+
+[libraries]
+kotlin-compiler = { module = "org.jetbrains.kotlin:kotlin-compiler-embeddable", version.ref = "kotlin" }
+kotlin-test     = { module = "org.jetbrains.kotlin:kotlin-test",                version.ref = "kotlin" }
+kct-core        = { module = "dev.zacsweers.kctfork:core",                      version.ref = "kct" }
+
+[plugins]
+kotlin-jvm = { id = "org.jetbrains.kotlin.jvm", version.ref = "kotlin" }
