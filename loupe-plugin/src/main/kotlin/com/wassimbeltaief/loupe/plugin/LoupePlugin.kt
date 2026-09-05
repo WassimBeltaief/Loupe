@@ -1,4 +1,4 @@
-package dev.loupeapp.plugin
+package com.wassimbeltaief.loupe.plugin
 
 import org.jetbrains.kotlin.backend.common.extensions.IrGenerationExtension
 import org.jetbrains.kotlin.compiler.plugin.CompilerPluginRegistrar
