@@ -1,4 +1,4 @@
-package dev.loupeapp.plugin
+package com.wassimbeltaief.loupe.plugin
 
 import com.tschuchort.compiletesting.KotlinCompilation
 import com.tschuchort.compiletesting.SourceFile
