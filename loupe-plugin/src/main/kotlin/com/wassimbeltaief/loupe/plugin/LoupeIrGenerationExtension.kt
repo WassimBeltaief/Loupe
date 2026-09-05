@@ -7,7 +7,6 @@ import org.jetbrains.kotlin.cli.common.messages.MessageCollector
 import org.jetbrains.kotlin.ir.IrElement
 import org.jetbrains.kotlin.ir.declarations.IrModuleFragment
 import org.jetbrains.kotlin.ir.declarations.IrSimpleFunction
-import org.jetbrains.kotlin.ir.expressions.IrCall
 import org.jetbrains.kotlin.ir.util.hasAnnotation
 import org.jetbrains.kotlin.ir.visitors.IrElementVisitorVoid
 import org.jetbrains.kotlin.ir.visitors.acceptChildrenVoid
@@ -24,11 +23,13 @@ class LoupeIrGenerationExtension(
 ) : IrGenerationExtension {
 
     override fun generate(moduleFragment: IrModuleFragment, pluginContext: IrPluginContext) {
-        moduleFragment.acceptVoid(LoupeIrVisitor(messageCollector, onComposableFound))
+        moduleFragment.acceptVoid(LoupeIrVisitor(pluginContext, messageCollector, onComposableFound))
     }
 }
 
 internal class LoupeIrVisitor(
+    // Stored for Phase 2 injection — resolving LoupeRuntime.record and building IrCall nodes.
+    @Suppress("unused") private val pluginContext: IrPluginContext,
     private val messageCollector: MessageCollector,
     private val onComposableFound: ((String) -> Unit)? = null,
 ) : IrElementVisitorVoid {
