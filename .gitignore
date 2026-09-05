@@ -3,6 +3,7 @@ build/
 .gradle/
 *.class
 *.jar
+!gradle/wrapper/gradle-wrapper.jar
 *.aar
 
 # Android
@@ -24,3 +25,6 @@ out/
 
 # Loupe — CI artifacts
 loupe-report*.json
+
+# Local design assets
+screenshots/
