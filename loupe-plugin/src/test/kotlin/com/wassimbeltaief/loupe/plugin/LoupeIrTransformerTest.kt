@@ -36,6 +36,8 @@ class LoupeIrTransformerTest {
         assertEquals(1, sink.size, "Expected exactly one record call")
         assertEquals("ProductCard", sink[0]["key"])
         assertEquals("ProductCard.kt", sink[0]["file"])
+        // IR startOffset lands on the @Composable annotation (line 2); verifies getLineNumber()+1 is correct
+        assertEquals(2, sink[0]["line"] as Int)
 
         @Suppress("UNCHECKED_CAST")
         val params = sink[0]["params"] as Array<Pair<String, Any?>>
@@ -133,6 +135,12 @@ class LoupeIrTransformerTest {
 
         val (result, sink) = compileWithPlugin(source)
         assertEquals(KotlinCompilation.ExitCode.OK, result.exitCode, result.messages)
+
+        val block: () -> Unit = {}
+        result.classLoader.loadClass("InlineCompKt")
+            .getMethod("InlineComposable", Function0::class.java)
+            .invoke(null, block)
+
         assertTrue(sink.isEmpty(), "Inline composables must not be instrumented")
     }
 
