@@ -1,3 +1,5 @@
+@file:OptIn(org.jetbrains.kotlin.ir.symbols.UnsafeDuringIrConstructionAPI::class)
+
 package com.wassimbeltaief.loupe.plugin
 
 import org.jetbrains.kotlin.backend.common.extensions.IrPluginContext
@@ -13,6 +15,7 @@ import org.jetbrains.kotlin.ir.builders.irGetObjectValue
 import org.jetbrains.kotlin.ir.builders.irImplicitCast
 import org.jetbrains.kotlin.ir.builders.irVararg
 import org.jetbrains.kotlin.ir.declarations.IrSimpleFunction
+import org.jetbrains.kotlin.ir.declarations.IrValueParameter
 import org.jetbrains.kotlin.ir.expressions.IrBlockBody
 import org.jetbrains.kotlin.ir.expressions.IrExpression
 import org.jetbrains.kotlin.ir.expressions.impl.IrConstImpl
@@ -53,8 +56,64 @@ internal class LoupeIrTransformer(
     private val irBuiltIns = pluginContext.irBuiltIns
     private val anyNType: IrType = irBuiltIns.anyType.makeNullable()
 
+    // ── Cached symbol lookups — resolved once per compilation, not per composable ──
+
+    private val runtimeClass by lazy {
+        pluginContext.referenceClass(LOUPE_RUNTIME_CLASS_ID).also { cls ->
+            if (cls == null) warn("LoupeRuntime not found on classpath — no composables will be instrumented")
+        }
+    }
+
+    // Identified by name + first param name "key", so a future overload won't silently break injection.
+    private val recordFn by lazy {
+        pluginContext.referenceFunctions(
+            CallableId(LOUPE_RUNTIME_CLASS_ID, Name.identifier("record"))
+        ).firstOrNull { fn ->
+            fn.owner.valueParameters.size == 4 &&
+                fn.owner.valueParameters[0].name.asString() == "key"
+        }.also { fn ->
+            if (fn == null) warn("LoupeRuntime.record(key,file,line,params) not found — no composables will be instrumented")
+        }
+    }
+
+    private val pairClass by lazy {
+        pluginContext.referenceClass(PAIR_CLASS_ID).also { cls ->
+            if (cls == null) warn("kotlin.Pair not found — params recording disabled")
+        }
+    }
+
+    private val pairCtor by lazy {
+        pairClass?.owner?.constructors?.singleOrNull { it.valueParameters.size == 2 }.also { ctor ->
+            if (ctor == null && pairClass != null) warn("Pair(A,B) constructor not found — params recording disabled")
+        }
+    }
+
+    private val arrayOfFn by lazy {
+        pluginContext.referenceFunctions(
+            CallableId(FqName("kotlin"), Name.identifier("arrayOf"))
+        ).singleOrNull { fn ->
+            fn.owner.valueParameters.size == 1 &&
+                fn.owner.valueParameters[0].varargElementType != null
+        }.also { fn ->
+            if (fn == null) warn("kotlin.arrayOf not found — params recording disabled")
+        }
+    }
+
+    private val identityHashCodeFn by lazy {
+        pluginContext.referenceClass(SYSTEM_CLASS_ID)
+            ?.owner?.functions
+            ?.singleOrNull { it.name.asString() == "identityHashCode" }
+            .also { fn ->
+                if (fn == null) warn("System.identityHashCode not found — lambda params will be captured by value")
+            }
+    }
+
+    private fun warn(msg: String) =
+        messageCollector.report(CompilerMessageSeverity.WARNING, "[Loupe] $msg")
+
+    // ── Visitor ──────────────────────────────────────────────────────────────
+
     override fun visitSimpleFunction(declaration: IrSimpleFunction): IrStatement {
-        // Depth-first: transform nested composables before the enclosing one
         declaration.transformChildrenVoid(this)
 
         if (!shouldInstrument(declaration)) return declaration
@@ -81,31 +140,21 @@ internal class LoupeIrTransformer(
     // ── Record call builder ──────────────────────────────────────────────────
 
     private fun buildRecordCall(declaration: IrSimpleFunction): IrExpression? {
-        val runtimeClass = pluginContext.referenceClass(LOUPE_RUNTIME_CLASS_ID) ?: run {
-            messageCollector.report(
-                CompilerMessageSeverity.WARNING,
-                "[Loupe] LoupeRuntime not found on classpath — skipping ${declaration.name}",
-            )
-            return null
-        }
-
-        val recordFn = pluginContext.referenceFunctions(
-            CallableId(LOUPE_RUNTIME_CLASS_ID, Name.identifier("record"))
-        ).singleOrNull { it.owner.valueParameters.size == 4 } ?: run {
-            messageCollector.report(
-                CompilerMessageSeverity.WARNING,
-                "[Loupe] LoupeRuntime.record(4 params) not found — skipping ${declaration.name}",
-            )
-            return null
-        }
-
-        val file = declaration.file.fileEntry.name.substringAfterLast('/')
-        val line = declaration.file.fileEntry.getLineNumber(declaration.startOffset) + 1
+        val rc = runtimeClass ?: return null
+        val fn = recordFn ?: return null
         val paramsArray = buildParamsArray(declaration) ?: return null
 
+        val file = declaration.file.fileEntry.name.substringAfterLast('/')
+        // Guard against UNDEFINED_OFFSET (-1) from synthetic IR nodes
+        val line = if (declaration.startOffset != UNDEFINED_OFFSET) {
+            declaration.file.fileEntry.getLineNumber(declaration.startOffset) + 1
+        } else {
+            0
+        }
+
         val builder = DeclarationIrBuilder(pluginContext, declaration.symbol)
-        return builder.irCall(recordFn).also { call ->
-            call.dispatchReceiver = builder.irGetObjectValue(runtimeClass.owner.defaultType, runtimeClass)
+        return builder.irCall(fn).also { call ->
+            call.dispatchReceiver = builder.irGetObjectValue(rc.owner.defaultType, rc)
             call.putValueArgument(0, irString(declaration.name.asString()))
             call.putValueArgument(1, irString(file))
             call.putValueArgument(2, irInt(line))
@@ -116,46 +165,37 @@ internal class LoupeIrTransformer(
     // ── Params array: arrayOf("name" to value, ...) ─────────────────────────
 
     private fun buildParamsArray(declaration: IrSimpleFunction): IrExpression? {
-        val pairClass = pluginContext.referenceClass(PAIR_CLASS_ID) ?: return null
-        val pairCtor = pairClass.owner.constructors
-            .singleOrNull { it.valueParameters.size == 2 } ?: return null
-
-        // arrayOf is vararg — identify by having exactly one vararg parameter
-        val arrayOfFn = pluginContext.referenceFunctions(
-            CallableId(FqName("kotlin"), Name.identifier("arrayOf"))
-        ).singleOrNull { fn ->
-            fn.owner.valueParameters.size == 1 &&
-                fn.owner.valueParameters[0].varargElementType != null
-        } ?: return null
+        val pc = pairClass ?: return null
+        val ctor = pairCtor ?: return null
+        val aoFn = arrayOfFn ?: return null
 
         // Skip $composer, $changed, $default injected by the Compose compiler
         val userParams = declaration.valueParameters
             .filter { !it.name.asString().startsWith("$") }
 
-        val pairType = pairClass.typeWith(irBuiltIns.stringType, anyNType)
+        val pairType = pc.typeWith(irBuiltIns.stringType, anyNType)
         val builder = DeclarationIrBuilder(pluginContext, declaration.symbol)
 
         val pairs = userParams.map { param ->
             val nameArg = irString(param.name.asString())
 
-            // Lambdas: capture identity hash code — lambda instances are never equal across calls
+            // Lambdas/callable refs: capture identity — instances are never equal across calls
             val rawValue: IrExpression = if (param.type.isFunctionLikeType()) {
                 buildIdentityHashCode(param, builder) ?: return null
             } else {
                 builder.irGet(param)
             }
 
-            // Upcast to Any? so Pair<String, Any?> constructor argument resolves cleanly
             val valueArg = builder.irImplicitCast(rawValue, anyNType)
 
-            builder.irCallConstructor(pairCtor.symbol, listOf(irBuiltIns.stringType, anyNType)).also { pair ->
+            builder.irCallConstructor(ctor.symbol, listOf(irBuiltIns.stringType, anyNType)).also { pair ->
                 pair.putValueArgument(0, nameArg)
                 pair.putValueArgument(1, valueArg)
             }
         }
 
         val arrayOfPairType = irBuiltIns.arrayClass.typeWith(pairType)
-        return builder.irCall(arrayOfFn, arrayOfPairType).also { call ->
+        return builder.irCall(aoFn, arrayOfPairType).also { call ->
             call.putTypeArgument(0, pairType)
             call.putValueArgument(0, builder.irVararg(pairType, pairs))
         }
@@ -163,15 +203,9 @@ internal class LoupeIrTransformer(
 
     // ── System.identityHashCode(param) ───────────────────────────────────────
 
-    private fun buildIdentityHashCode(
-        param: org.jetbrains.kotlin.ir.declarations.IrValueParameter,
-        builder: DeclarationIrBuilder,
-    ): IrExpression? {
-        val systemClass = pluginContext.referenceClass(SYSTEM_CLASS_ID) ?: return null
-        val identityHashCodeFn = systemClass.owner.functions
-            .singleOrNull { it.name.asString() == "identityHashCode" } ?: return null
-
-        return builder.irCall(identityHashCodeFn.symbol).also { call ->
+    private fun buildIdentityHashCode(param: IrValueParameter, builder: DeclarationIrBuilder): IrExpression? {
+        val fn = identityHashCodeFn ?: return null
+        return builder.irCall(fn.symbol).also { call ->
             call.putValueArgument(0, builder.irGet(param))
         }
     }
@@ -182,9 +216,11 @@ internal class LoupeIrTransformer(
         if (this !is IrSimpleType) return false
         val cls = classifier as? IrClassSymbol ?: return false
         val fqn = cls.owner.fqNameWhenAvailable?.asString() ?: return false
+        // kotlin.Function* covers lambdas; kotlin.reflect.KFunction* covers callable references (::method)
+        // kotlin.coroutines.SuspendFunction* covers suspend lambdas
         return fqn.startsWith("kotlin.Function") ||
-            fqn.startsWith("kotlin.coroutines.SuspendFunction") ||
-            fqn.startsWith("kotlin.jvm.functions.Function")
+            fqn.startsWith("kotlin.reflect.KFunction") ||
+            fqn.startsWith("kotlin.coroutines.SuspendFunction")
     }
 
     // ── IR constant helpers ──────────────────────────────────────────────────
