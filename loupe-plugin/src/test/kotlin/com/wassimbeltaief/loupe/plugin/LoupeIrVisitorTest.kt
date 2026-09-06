@@ -35,7 +35,7 @@ class LoupeIrVisitorTest {
         val visited = mutableListOf<String>()
 
         val result = KotlinCompilation().apply {
-            sources = listOf(composableStub, loupeRuntimeStub, source)
+            sources = listOf(composableStub, source)
             compilerPluginRegistrars = listOf(capturingPlugin(visited))
             inheritClassPath = true
         }.compile()
@@ -57,7 +57,7 @@ class LoupeIrVisitorTest {
         val visited = mutableListOf<String>()
 
         val result = KotlinCompilation().apply {
-            sources = listOf(loupeRuntimeStub, source)
+            sources = listOf(source)
             compilerPluginRegistrars = listOf(capturingPlugin(visited))
             inheritClassPath = true
         }.compile()

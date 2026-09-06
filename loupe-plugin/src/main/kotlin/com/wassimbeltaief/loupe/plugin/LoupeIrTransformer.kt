@@ -116,12 +116,13 @@ internal class LoupeIrTransformer(
         if (!shouldInstrument(declaration)) return declaration
 
         val body = declaration.body as? IrBlockBody ?: return declaration
-        val recordCall = buildRecordCall(declaration) ?: return declaration
-
-        body.statements.add(0, recordCall)
-
+        // Fire the callback as soon as we confirm this composable is eligible and has a real block
+        // body. Decoupled from buildRecordCall so visitor tests work without LoupeRuntime on classpath.
         val name = declaration.name.asString()
         onComposableFound?.invoke(name)
+
+        val recordCall = buildRecordCall(declaration) ?: return declaration
+        body.statements.add(0, recordCall)
         messageCollector.report(CompilerMessageSeverity.LOGGING, "[Loupe] instrumenting: $name")
         return declaration
     }
