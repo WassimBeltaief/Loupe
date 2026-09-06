@@ -2,6 +2,7 @@
 
 package com.wassimbeltaief.loupe.plugin
 
+import java.io.File
 import org.jetbrains.kotlin.backend.common.extensions.IrPluginContext
 import org.jetbrains.kotlin.backend.common.lower.DeclarationIrBuilder
 import org.jetbrains.kotlin.cli.common.messages.CompilerMessageSeverity
@@ -42,11 +43,6 @@ private val LOUPE_RUNTIME_CLASS_ID = ClassId.topLevel(FqName("com.wassimbeltaief
 private val PAIR_CLASS_ID = ClassId(FqName("kotlin"), Name.identifier("Pair"))
 private val SYSTEM_CLASS_ID = ClassId.fromString("java/lang/System")
 
-/**
- * Transforms every non-inline @Composable function in the IR tree by prepending
- * a LoupeRuntime.record(...) call as the first statement in its body.
- * The user's code is never modified — only a single call is inserted before it.
- */
 internal class LoupeIrTransformer(
     private val pluginContext: IrPluginContext,
     private val messageCollector: MessageCollector,
@@ -91,7 +87,7 @@ internal class LoupeIrTransformer(
     private val arrayOfFn by lazy {
         pluginContext.referenceFunctions(
             CallableId(FqName("kotlin"), Name.identifier("arrayOf"))
-        ).singleOrNull { fn ->
+        ).firstOrNull { fn ->
             fn.owner.valueParameters.size == 1 &&
                 fn.owner.valueParameters[0].varargElementType != null
         }.also { fn ->
@@ -142,10 +138,8 @@ internal class LoupeIrTransformer(
     private fun buildRecordCall(declaration: IrSimpleFunction): IrExpression? {
         val rc = runtimeClass ?: return null
         val fn = recordFn ?: return null
-        val paramsArray = buildParamsArray(declaration) ?: return null
 
-        val file = declaration.file.fileEntry.name.substringAfterLast('/')
-        // Guard against UNDEFINED_OFFSET (-1) from synthetic IR nodes
+        val file = File(declaration.file.fileEntry.name).name
         val line = if (declaration.startOffset != UNDEFINED_OFFSET) {
             declaration.file.fileEntry.getLineNumber(declaration.startOffset) + 1
         } else {
@@ -153,6 +147,10 @@ internal class LoupeIrTransformer(
         }
 
         val builder = DeclarationIrBuilder(pluginContext, declaration.symbol)
+        // Fall back to empty params array so recomposition count is still captured even if
+        // Pair or arrayOf symbols can't be resolved (e.g. stripped test classpath).
+        val paramsArray = buildParamsArray(declaration, builder) ?: buildEmptyParamsArray(builder) ?: return null
+
         return builder.irCall(fn).also { call ->
             call.dispatchReceiver = builder.irGetObjectValue(rc.owner.defaultType, rc)
             call.putValueArgument(0, irString(declaration.name.asString()))
@@ -162,9 +160,19 @@ internal class LoupeIrTransformer(
         }
     }
 
+    private fun buildEmptyParamsArray(builder: DeclarationIrBuilder): IrExpression? {
+        val aoFn = arrayOfFn ?: return null
+        val elementType = pairClass?.typeWith(irBuiltIns.stringType, anyNType) ?: anyNType
+        val arrayType = irBuiltIns.arrayClass.typeWith(elementType)
+        return builder.irCall(aoFn, arrayType).also { call ->
+            call.putTypeArgument(0, elementType)
+            call.putValueArgument(0, builder.irVararg(elementType, emptyList()))
+        }
+    }
+
     // ── Params array: arrayOf("name" to value, ...) ─────────────────────────
 
-    private fun buildParamsArray(declaration: IrSimpleFunction): IrExpression? {
+    private fun buildParamsArray(declaration: IrSimpleFunction, builder: DeclarationIrBuilder): IrExpression? {
         val pc = pairClass ?: return null
         val ctor = pairCtor ?: return null
         val aoFn = arrayOfFn ?: return null
@@ -174,20 +182,17 @@ internal class LoupeIrTransformer(
             .filter { !it.name.asString().startsWith("$") }
 
         val pairType = pc.typeWith(irBuiltIns.stringType, anyNType)
-        val builder = DeclarationIrBuilder(pluginContext, declaration.symbol)
 
         val pairs = userParams.map { param ->
             val nameArg = irString(param.name.asString())
-
-            // Lambdas/callable refs: capture identity — instances are never equal across calls
+            // Lambdas/callable refs: capture identity — instances are never equal across calls.
+            // Fall back to value capture if System.identityHashCode is unavailable (stripped JDK).
             val rawValue: IrExpression = if (param.type.isFunctionLikeType()) {
-                buildIdentityHashCode(param, builder) ?: return null
+                buildIdentityHashCode(param, builder) ?: builder.irGet(param)
             } else {
                 builder.irGet(param)
             }
-
             val valueArg = builder.irImplicitCast(rawValue, anyNType)
-
             builder.irCallConstructor(ctor.symbol, listOf(irBuiltIns.stringType, anyNType)).also { pair ->
                 pair.putValueArgument(0, nameArg)
                 pair.putValueArgument(1, valueArg)
@@ -216,10 +221,11 @@ internal class LoupeIrTransformer(
         if (this !is IrSimpleType) return false
         val cls = classifier as? IrClassSymbol ?: return false
         val fqn = cls.owner.fqNameWhenAvailable?.asString() ?: return false
-        // kotlin.Function* covers lambdas; kotlin.reflect.KFunction* covers callable references (::method)
+        // kotlin.Function* covers lambdas; kotlin.reflect.KFunction* / KSuspendFunction* cover callable refs
         // kotlin.coroutines.SuspendFunction* covers suspend lambdas
         return fqn.startsWith("kotlin.Function") ||
             fqn.startsWith("kotlin.reflect.KFunction") ||
+            fqn.startsWith("kotlin.reflect.KSuspendFunction") ||
             fqn.startsWith("kotlin.coroutines.SuspendFunction")
     }
 
