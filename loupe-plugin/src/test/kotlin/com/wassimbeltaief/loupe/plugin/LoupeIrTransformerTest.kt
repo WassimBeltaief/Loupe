@@ -12,35 +12,8 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
-/**
- * Verifies IR injection by compiling source with the plugin, running the resulting bytecode
- * via reflection, and asserting that LoupeRuntime.record was called with the expected arguments.
- *
- * No mocking — we compile a real LoupeRuntime stub alongside the subject and run the JVM code.
- */
 @OptIn(ExperimentalCompilerApi::class)
 class LoupeIrTransformerTest {
-
-    // Stub with the real FQN — our plugin detects @Composable by FQN, not by type resolution.
-    private val composableStub = SourceFile.kotlin(
-        "Composable.kt", """
-        package androidx.compose.runtime
-        annotation class Composable
-        """.trimIndent()
-    )
-
-    // Minimal LoupeRuntime that records calls to a list we can inspect via reflection.
-    private val loupeRuntimeStub = SourceFile.kotlin(
-        "LoupeRuntime.kt", """
-        package com.wassimbeltaief.loupe.runtime
-        object LoupeRuntime {
-            val calls = mutableListOf<Map<String, Any?>>()
-            fun record(key: String, file: String, line: Int, params: Array<Pair<String, Any?>>) {
-                calls += mapOf("key" to key, "file" to file, "line" to line, "params" to params)
-            }
-        }
-        """.trimIndent()
-    )
 
     @Test
     fun `injects record call at top of composable body`() {
@@ -101,6 +74,31 @@ class LoupeIrTransformerTest {
         // Kotlin top-level var compiles to a private backing field — use declared + accessible
         val sideEffect = clazz.getDeclaredField("sideEffect").also { it.isAccessible = true }.get(null) as Int
         assertEquals(7, sideEffect)
+    }
+
+    @Test
+    fun `record call fires before user body executes`() {
+        // If record fires first, the sink is populated even when the user body throws.
+        // If the user body ran first, the exception would propagate before record was called.
+        val source = SourceFile.kotlin(
+            "Thrower.kt", """
+            import androidx.compose.runtime.Composable
+            @Composable
+            fun ThrowingComposable(n: Int) {
+                throw RuntimeException("user body")
+            }
+            """.trimIndent()
+        )
+
+        val (result, sink) = compileWithPlugin(source)
+        assertEquals(KotlinCompilation.ExitCode.OK, result.exitCode, result.messages)
+
+        try {
+            result.callTopLevel("ThrowerKt", "ThrowingComposable", Int::class.java to 1)
+        } catch (_: Exception) { /* expected */ }
+
+        assertEquals(1, sink.size, "record must be called before user body throws")
+        assertEquals("ThrowingComposable", sink[0]["key"])
     }
 
     @Test
