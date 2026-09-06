@@ -21,6 +21,7 @@ import org.jetbrains.kotlin.ir.expressions.IrBlockBody
 import org.jetbrains.kotlin.ir.expressions.IrExpression
 import org.jetbrains.kotlin.ir.expressions.impl.IrConstImpl
 import org.jetbrains.kotlin.ir.symbols.IrClassSymbol
+import org.jetbrains.kotlin.ir.symbols.IrTypeParameterSymbol
 import org.jetbrains.kotlin.ir.types.IrSimpleType
 import org.jetbrains.kotlin.ir.types.IrType
 import org.jetbrains.kotlin.ir.types.makeNullable
@@ -114,14 +115,14 @@ internal class LoupeIrTransformer(
 
         if (!shouldInstrument(declaration)) return declaration
 
-        val name = declaration.name.asString()
-        onComposableFound?.invoke(name)
-        messageCollector.report(CompilerMessageSeverity.LOGGING, "[Loupe] instrumenting: $name")
-
         val body = declaration.body as? IrBlockBody ?: return declaration
         val recordCall = buildRecordCall(declaration) ?: return declaration
 
         body.statements.add(0, recordCall)
+
+        val name = declaration.name.asString()
+        onComposableFound?.invoke(name)
+        messageCollector.report(CompilerMessageSeverity.LOGGING, "[Loupe] instrumenting: $name")
         return declaration
     }
 
@@ -140,7 +141,8 @@ internal class LoupeIrTransformer(
         val fn = recordFn ?: return null
 
         val file = File(declaration.file.fileEntry.name).name
-        val line = if (declaration.startOffset != UNDEFINED_OFFSET) {
+        // Any negative offset (UNDEFINED_OFFSET = -1, SYNTHETIC_OFFSET = Int.MIN_VALUE/2, …) means no real source location.
+        val line = if (declaration.startOffset >= 0) {
             declaration.file.fileEntry.getLineNumber(declaration.startOffset) + 1
         } else {
             0
@@ -160,9 +162,13 @@ internal class LoupeIrTransformer(
         }
     }
 
+    // Called when buildParamsArray fails (pairCtor missing, etc.) but arrayOfFn is available.
+    // Note: if arrayOfFn itself is null, this also returns null and the composable is dropped —
+    // there is no way to build any array expression without it.
     private fun buildEmptyParamsArray(builder: DeclarationIrBuilder): IrExpression? {
         val aoFn = arrayOfFn ?: return null
-        val elementType = pairClass?.typeWith(irBuiltIns.stringType, anyNType) ?: anyNType
+        val pc = pairClass ?: return null  // can't produce a correctly-typed array without Pair
+        val elementType = pc.typeWith(irBuiltIns.stringType, anyNType)
         val arrayType = irBuiltIns.arrayClass.typeWith(elementType)
         return builder.irCall(aoFn, arrayType).also { call ->
             call.putTypeArgument(0, elementType)
@@ -219,14 +225,20 @@ internal class LoupeIrTransformer(
 
     private fun IrType.isFunctionLikeType(): Boolean {
         if (this !is IrSimpleType) return false
-        val cls = classifier as? IrClassSymbol ?: return false
-        val fqn = cls.owner.fqNameWhenAvailable?.asString() ?: return false
-        // kotlin.Function* covers lambdas; kotlin.reflect.KFunction* / KSuspendFunction* cover callable refs
-        // kotlin.coroutines.SuspendFunction* covers suspend lambdas
-        return fqn.startsWith("kotlin.Function") ||
-            fqn.startsWith("kotlin.reflect.KFunction") ||
-            fqn.startsWith("kotlin.reflect.KSuspendFunction") ||
-            fqn.startsWith("kotlin.coroutines.SuspendFunction")
+        return when (val sym = classifier) {
+            is IrClassSymbol -> {
+                val fqn = sym.owner.fqNameWhenAvailable?.asString() ?: return false
+                // kotlin.Function* covers lambdas; kotlin.reflect.KFunction* / KSuspendFunction* cover callable refs
+                // kotlin.coroutines.SuspendFunction* covers suspend lambdas
+                fqn.startsWith("kotlin.Function") ||
+                    fqn.startsWith("kotlin.reflect.KFunction") ||
+                    fqn.startsWith("kotlin.reflect.KSuspendFunction") ||
+                    fqn.startsWith("kotlin.coroutines.SuspendFunction")
+            }
+            // <T : () -> Unit> — T's classifier is a type parameter; check its upper bounds
+            is IrTypeParameterSymbol -> sym.owner.superTypes.any { it.isFunctionLikeType() }
+            else -> false
+        }
     }
 
     // ── IR constant helpers ──────────────────────────────────────────────────
