@@ -1,0 +1,132 @@
+package com.wassimbeltaief.loupe.sample.scenarios
+
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.Button
+import androidx.compose.material3.ElevatedCard
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import com.wassimbeltaief.loupe.runtime.LoupeRuntime
+
+@Composable
+fun UnstableListScenario(onBack: () -> Unit) {
+    var counter by remember { mutableStateOf(0) }
+    val items = mutableListOf("Widget Pro", "Gadget Plus", "Doohickey Deluxe")
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(horizontal = 24.dp, vertical = 24.dp),
+        verticalArrangement = Arrangement.spacedBy(0.dp),
+    ) {
+        TextButton(onClick = onBack) {
+            Text("← Back", style = MaterialTheme.typography.labelLarge)
+        }
+        Spacer(Modifier.height(8.dp))
+        Text(
+            text = "Unstable List",
+            style = MaterialTheme.typography.displaySmall,
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.error,
+        )
+        Text(
+            text = "MutableList param churn",
+            style = MaterialTheme.typography.titleMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Spacer(Modifier.height(12.dp))
+        Text(
+            text = "A new MutableList is created on every recomposition and passed to ProductCard. " +
+                "Compose can't skip it because MutableList is unstable. Watch the overlay turn red.",
+            style = MaterialTheme.typography.bodyLarge,
+            color = MaterialTheme.colorScheme.onSurface,
+        )
+        Spacer(Modifier.height(24.dp))
+
+        ElevatedCard(modifier = Modifier.fillMaxWidth()) {
+            Column(modifier = Modifier.padding(20.dp)) {
+                Text(
+                    text = "ProductCard",
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.primary,
+                    fontFamily = FontFamily.Monospace,
+                )
+                Text(
+                    text = "Under watch",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Spacer(Modifier.height(12.dp))
+                ProductCard(price = 19.99 + counter * 0.01, title = "Widget Pro", items = items)
+            }
+        }
+
+        Spacer(Modifier.weight(1f))
+        Text(
+            text = "Recompositions triggered: $counter",
+            style = MaterialTheme.typography.titleMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(bottom = 12.dp),
+        )
+        Button(
+            onClick = { counter++ },
+            modifier = Modifier.fillMaxWidth(),
+            contentPadding = PaddingValues(vertical = 20.dp),
+        ) {
+            Text(
+                text = "Trigger Recomposition",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold,
+            )
+        }
+    }
+}
+
+@Composable
+private fun ProductCard(price: Double, title: String, items: MutableList<String>) {
+    LoupeRuntime.record(
+        key = "ProductCard",
+        file = "UnstableListScenario.kt",
+        line = 84,
+        params = arrayOf(
+            "price" to price,
+            "title" to title,
+            "items" to items,
+        ),
+    )
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Text(
+            text = title,
+            style = MaterialTheme.typography.titleLarge,
+            fontWeight = FontWeight.Bold,
+        )
+        Text(
+            text = "${"%.2f".format(price)} USD",
+            style = MaterialTheme.typography.headlineSmall,
+            color = MaterialTheme.colorScheme.primary,
+        )
+        items.forEach {
+            Text(
+                text = "• $it",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
+}
