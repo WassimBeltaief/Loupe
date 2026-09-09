@@ -9,6 +9,13 @@ val composableStub = SourceFile.kotlin(
     """.trimIndent()
 )
 
+val loupeIgnoreStub = SourceFile.kotlin(
+    "LoupeIgnore.kt", """
+    package com.wassimbeltaief.loupe.runtime
+    annotation class LoupeIgnore
+    """.trimIndent()
+)
+
 val loupeRuntimeStub = SourceFile.kotlin(
     "LoupeRuntime.kt", """
     package com.wassimbeltaief.loupe.runtime

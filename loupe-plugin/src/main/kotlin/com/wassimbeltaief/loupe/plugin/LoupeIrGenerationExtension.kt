@@ -9,11 +9,12 @@ import org.jetbrains.kotlin.ir.visitors.transformChildrenVoid
 class LoupeIrGenerationExtension(
     private val messageCollector: MessageCollector,
     internal val onComposableFound: ((String) -> Unit)? = null,
+    private val packageFilter: List<String> = emptyList(),
 ) : IrGenerationExtension {
 
     override fun generate(moduleFragment: IrModuleFragment, pluginContext: IrPluginContext) {
         moduleFragment.transformChildrenVoid(
-            LoupeIrTransformer(pluginContext, messageCollector, onComposableFound)
+            LoupeIrTransformer(pluginContext, messageCollector, onComposableFound, packageFilter)
         )
     }
 }
