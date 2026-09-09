@@ -1,6 +1,9 @@
 package com.wassimbeltaief.loupe.runtime
 
 import android.app.Application
+import androidx.lifecycle.DefaultLifecycleObserver
+import androidx.lifecycle.LifecycleOwner
+import androidx.lifecycle.ProcessLifecycleOwner
 import com.wassimbeltaief.loupe.runtime.model.RecompositionHistory
 import com.wassimbeltaief.loupe.runtime.overlay.LoupeOverlayManager
 import com.wassimbeltaief.loupe.runtime.registry.RecompositionRegistry
@@ -25,7 +28,14 @@ object LoupeRuntime {
         if (config.overlayEnabled) {
             val manager = LoupeOverlayManager(application)
             overlayManager = manager
-            manager.show(stateFlow = registry.state, config = config)
+            ProcessLifecycleOwner.get().lifecycle.addObserver(object : DefaultLifecycleObserver {
+                override fun onStart(owner: LifecycleOwner) {
+                    manager.show(stateFlow = registry.state, config = this@LoupeRuntime.config)
+                }
+                override fun onStop(owner: LifecycleOwner) {
+                    manager.dismiss()
+                }
+            })
         }
     }
 

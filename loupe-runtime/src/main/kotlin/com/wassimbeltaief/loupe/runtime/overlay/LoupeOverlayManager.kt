@@ -4,6 +4,8 @@ import android.app.Application
 import android.content.Context
 import android.graphics.PixelFormat
 import android.os.Build
+import android.provider.Settings
+import android.util.Log
 import android.view.Gravity
 import android.view.WindowManager
 import androidx.compose.ui.platform.ComposeView
@@ -28,6 +30,11 @@ internal class LoupeOverlayManager(private val application: Application) {
         config: LoupeConfig,
     ) {
         if (overlayView != null) return
+        if (!Settings.canDrawOverlays(application)) {
+            Log.w("Loupe", "SYSTEM_ALERT_WINDOW permission not granted — overlay disabled. " +
+                "Grant it via: adb shell appops set ${application.packageName} SYSTEM_ALERT_WINDOW allow")
+            return
+        }
 
         val owner = OverlayLifecycleOwner().also {
             it.start()
