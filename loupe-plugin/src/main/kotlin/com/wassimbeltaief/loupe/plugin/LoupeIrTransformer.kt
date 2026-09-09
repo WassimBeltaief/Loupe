@@ -40,6 +40,7 @@ import org.jetbrains.kotlin.name.FqName
 import org.jetbrains.kotlin.name.Name
 
 private val COMPOSABLE_FQN = FqName("androidx.compose.runtime.Composable")
+private val LOUPE_IGNORE_FQN = FqName("com.wassimbeltaief.loupe.runtime.LoupeIgnore")
 private val LOUPE_RUNTIME_CLASS_ID = ClassId.topLevel(FqName("com.wassimbeltaief.loupe.runtime.LoupeRuntime"))
 private val PAIR_CLASS_ID = ClassId(FqName("kotlin"), Name.identifier("Pair"))
 private val SYSTEM_CLASS_ID = ClassId.fromString("java/lang/System")
@@ -48,6 +49,7 @@ internal class LoupeIrTransformer(
     private val pluginContext: IrPluginContext,
     private val messageCollector: MessageCollector,
     internal val onComposableFound: ((String) -> Unit)? = null,
+    private val packageFilter: List<String> = emptyList(),
 ) : IrElementTransformerVoid() {
 
     private val irBuiltIns = pluginContext.irBuiltIns
@@ -132,6 +134,11 @@ internal class LoupeIrTransformer(
         if (declaration.isInline) return false        // inline has no discrete body post-inlining
         if (declaration.name.isSpecial) return false  // <anonymous> lambdas — no stable key
         if (declaration.body == null) return false    // abstract / expect
+        if (declaration.hasAnnotation(LOUPE_IGNORE_FQN)) return false
+        if (packageFilter.isNotEmpty()) {
+            val pkg = declaration.fqNameWhenAvailable?.parent()?.asString() ?: return false
+            if (packageFilter.none { pkg.startsWith(it) }) return false
+        }
         return true
     }
 
