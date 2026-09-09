@@ -31,7 +31,7 @@ fun StableScenario(onBack: () -> Unit) {
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .padding(horizontal = 24.dp, vertical = 24.dp),
+            .padding(start = 24.dp, end = 24.dp, top = 24.dp, bottom = 140.dp),
         verticalArrangement = Arrangement.spacedBy(0.dp),
     ) {
         TextButton(onClick = onBack) {
