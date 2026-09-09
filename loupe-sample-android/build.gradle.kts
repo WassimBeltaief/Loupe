@@ -27,7 +27,7 @@ android {
 }
 
 dependencies {
-    debugImplementation(project(":loupe-runtime"))
+    implementation(project(":loupe-runtime"))
 
     implementation(platform(libs.compose.bom))
     implementation(libs.compose.ui)
