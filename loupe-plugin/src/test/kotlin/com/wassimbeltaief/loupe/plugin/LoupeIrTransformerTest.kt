@@ -176,6 +176,65 @@ class LoupeIrTransformerTest {
     }
 
     @Test
+    fun `skips @LoupeIgnore annotated composables`() {
+        val source = SourceFile.kotlin(
+            "Ignored.kt", """
+            import androidx.compose.runtime.Composable
+            import com.wassimbeltaief.loupe.runtime.LoupeIgnore
+            @LoupeIgnore
+            @Composable
+            fun IgnoredComposable(x: Int) {}
+            """.trimIndent()
+        )
+
+        val (result, sink) = compileWithPlugin(source, extraStubs = listOf(loupeIgnoreStub))
+        assertEquals(KotlinCompilation.ExitCode.OK, result.exitCode, result.messages)
+
+        result.classLoader.loadClass("IgnoredKt")
+            .getMethod("IgnoredComposable", Int::class.java)
+            .invoke(null, 1)
+
+        assertTrue(sink.isEmpty(), "@LoupeIgnore composables must not be instrumented")
+    }
+
+    @Test
+    fun `respects package filter`() {
+        val inFilterSource = SourceFile.kotlin(
+            "InFilter.kt", """
+            package com.myapp.ui
+            import androidx.compose.runtime.Composable
+            @Composable
+            fun Card(title: String) {}
+            """.trimIndent()
+        )
+        val outOfFilterSource = SourceFile.kotlin(
+            "OutOfFilter.kt", """
+            package com.otherapp.ui
+            import androidx.compose.runtime.Composable
+            @Composable
+            fun Button(label: String) {}
+            """.trimIndent()
+        )
+
+        val (result, sink) = compileWithPlugin(
+            inFilterSource,
+            extraSources = listOf(outOfFilterSource),
+            packageFilter = listOf("com.myapp"),
+        )
+        assertEquals(KotlinCompilation.ExitCode.OK, result.exitCode, result.messages)
+
+        result.classLoader.loadClass("com.myapp.ui.InFilterKt")
+            .getMethod("Card", String::class.java)
+            .invoke(null, "hello")
+        result.classLoader.loadClass("com.otherapp.ui.OutOfFilterKt")
+            .getMethod("Button", String::class.java)
+            .invoke(null, "click")
+
+        assertEquals(1, sink.size, "Only the in-filter composable should be instrumented")
+        assertEquals("Card", sink[0]["key"])
+    }
+
+    @Test
     fun `handles composable with no parameters`() {
         val source = SourceFile.kotlin(
             "Spinner.kt", """
@@ -203,10 +262,15 @@ class LoupeIrTransformerTest {
      * Returns the compilation result and a live list that is backed by LoupeRuntime.calls
      * in the compiled classloader — populated when record() is called.
      */
-    private fun compileWithPlugin(source: SourceFile): Pair<JvmCompilationResult, List<Map<String, Any?>>> {
+    private fun compileWithPlugin(
+        source: SourceFile,
+        extraSources: List<SourceFile> = emptyList(),
+        extraStubs: List<SourceFile> = emptyList(),
+        packageFilter: List<String> = emptyList(),
+    ): Pair<JvmCompilationResult, List<Map<String, Any?>>> {
         val result = KotlinCompilation().apply {
-            sources = listOf(composableStub, loupeRuntimeStub, source)
-            compilerPluginRegistrars = listOf(testPlugin())
+            sources = listOf(composableStub, loupeRuntimeStub) + extraStubs + listOf(source) + extraSources
+            compilerPluginRegistrars = listOf(testPlugin(packageFilter))
             inheritClassPath = true
         }.compile()
 
@@ -237,11 +301,14 @@ class LoupeIrTransformerTest {
         method.invoke(null, *args.map { it.second }.toTypedArray())
     }
 
-    private fun testPlugin() = object : CompilerPluginRegistrar() {
+    private fun testPlugin(packageFilter: List<String> = emptyList()) = object : CompilerPluginRegistrar() {
         override val supportsK2 = true
         override fun ExtensionStorage.registerExtensions(configuration: CompilerConfiguration) {
             IrGenerationExtension.registerExtension(
-                LoupeIrGenerationExtension(messageCollector = configuration.messageCollector)
+                LoupeIrGenerationExtension(
+                    messageCollector = configuration.messageCollector,
+                    packageFilter = packageFilter,
+                )
             )
         }
     }
