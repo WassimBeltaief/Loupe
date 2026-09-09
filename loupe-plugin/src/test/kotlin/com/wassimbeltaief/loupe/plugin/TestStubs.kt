@@ -16,6 +16,13 @@ val loupeIgnoreStub = SourceFile.kotlin(
     """.trimIndent()
 )
 
+val lambdaRefStub = SourceFile.kotlin(
+    "LambdaRef.kt", """
+    package com.wassimbeltaief.loupe.runtime.model
+    data class LambdaRef(val identityHashCode: Int)
+    """.trimIndent()
+)
+
 val loupeRuntimeStub = SourceFile.kotlin(
     "LoupeRuntime.kt", """
     package com.wassimbeltaief.loupe.runtime

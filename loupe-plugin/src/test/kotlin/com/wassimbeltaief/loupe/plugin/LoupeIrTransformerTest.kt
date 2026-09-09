@@ -169,10 +169,16 @@ class LoupeIrTransformerTest {
         assertEquals("OK", params[0].second)
 
         assertEquals("onClick", params[1].first)
-        // Lambda param must be the identity hash code (an Int), not the lambda itself
+        // Lambda param must be wrapped in LambdaRef, not passed by value
         val recorded = params[1].second
-        assertTrue(recorded is Int, "Lambda param should be Int identityHashCode, got ${recorded?.javaClass}")
-        assertEquals(System.identityHashCode(lambda), recorded)
+        val recordedClass = recorded?.javaClass
+        assertEquals(
+            "com.wassimbeltaief.loupe.runtime.model.LambdaRef",
+            recordedClass?.name,
+            "Lambda param should be LambdaRef, got $recordedClass",
+        )
+        val hashCode = recordedClass!!.getMethod("getIdentityHashCode").invoke(recorded) as Int
+        assertEquals(System.identityHashCode(lambda), hashCode)
     }
 
     @Test
@@ -269,7 +275,7 @@ class LoupeIrTransformerTest {
         packageFilter: List<String> = emptyList(),
     ): Pair<JvmCompilationResult, List<Map<String, Any?>>> {
         val result = KotlinCompilation().apply {
-            sources = listOf(composableStub, loupeRuntimeStub) + extraStubs + listOf(source) + extraSources
+            sources = listOf(composableStub, loupeRuntimeStub, lambdaRefStub) + extraStubs + listOf(source) + extraSources
             compilerPluginRegistrars = listOf(testPlugin(packageFilter))
             inheritClassPath = true
         }.compile()
