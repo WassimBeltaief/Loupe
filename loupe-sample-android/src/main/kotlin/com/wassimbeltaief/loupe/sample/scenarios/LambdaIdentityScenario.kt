@@ -54,7 +54,7 @@ fun LambdaIdentityScenario(onBack: () -> Unit) {
         Spacer(Modifier.height(12.dp))
         Text(
             text = "onClick is defined inline in the parent body. " +
-                "Every parent recomposition creates a new lambda instance — " +
+                "Every tap recomposes the parent and creates a new lambda instance — " +
                 "identityHashCode changes even though the behaviour is identical. " +
                 "The overlay blames it in amber.",
             style = MaterialTheme.typography.bodyLarge,
@@ -71,7 +71,7 @@ fun LambdaIdentityScenario(onBack: () -> Unit) {
                     fontFamily = FontFamily.Monospace,
                 )
                 Text(
-                    text = "Under watch",
+                    text = "Under watch — tap to trigger",
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -80,24 +80,12 @@ fun LambdaIdentityScenario(onBack: () -> Unit) {
             }
         }
 
-        Spacer(Modifier.weight(1f))
+        Spacer(Modifier.height(12.dp))
         Text(
             text = "Tapped: $counter times",
             style = MaterialTheme.typography.titleMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.padding(bottom = 12.dp),
         )
-        Button(
-            onClick = { counter++ },
-            modifier = Modifier.fillMaxWidth(),
-            contentPadding = PaddingValues(vertical = 20.dp),
-        ) {
-            Text(
-                text = "Trigger Recomposition",
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.SemiBold,
-            )
-        }
     }
 }
 
@@ -106,7 +94,7 @@ private fun ButtonWithCallback(label: String, onClick: () -> Unit) {
     LoupeRuntime.record(
         key = "ButtonWithCallback",
         file = "LambdaIdentityScenario.kt",
-        line = 87,
+        line = 82,
         params = arrayOf(
             "label" to label,
             "onClick" to LambdaRef(System.identityHashCode(onClick)),
