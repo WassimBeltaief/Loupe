@@ -1,5 +1,8 @@
 package com.wassimbeltaief.loupe.runtime
 
+import android.app.Application
+import com.wassimbeltaief.loupe.runtime.model.RecompositionHistory
+import com.wassimbeltaief.loupe.runtime.overlay.LoupeOverlayManager
 import com.wassimbeltaief.loupe.runtime.registry.RecompositionRegistry
 import kotlinx.coroutines.flow.StateFlow
 
@@ -13,7 +16,18 @@ object LoupeRuntime {
         windowNs = config.windowSeconds * 1_000_000_000L,
     )
 
-    val state: StateFlow<*> get() = registry.state
+    private var overlayManager: LoupeOverlayManager? = null
+
+    val state: StateFlow<Map<String, RecompositionHistory>> get() = registry.state
+
+    fun install(application: Application, config: LoupeConfig = LoupeConfig()) {
+        configure(config)
+        if (config.overlayEnabled) {
+            val manager = LoupeOverlayManager(application)
+            overlayManager = manager
+            manager.show(stateFlow = registry.state, config = config)
+        }
+    }
 
     // Called exclusively by compiler-injected code
     fun record(key: String, file: String, line: Int, params: Array<Pair<String, Any?>>) {
