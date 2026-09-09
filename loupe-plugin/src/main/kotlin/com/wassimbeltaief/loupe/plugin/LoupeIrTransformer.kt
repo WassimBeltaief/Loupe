@@ -44,6 +44,7 @@ private val LOUPE_IGNORE_FQN = FqName("com.wassimbeltaief.loupe.runtime.LoupeIgn
 private val LOUPE_RUNTIME_CLASS_ID = ClassId.topLevel(FqName("com.wassimbeltaief.loupe.runtime.LoupeRuntime"))
 private val PAIR_CLASS_ID = ClassId(FqName("kotlin"), Name.identifier("Pair"))
 private val SYSTEM_CLASS_ID = ClassId.fromString("java/lang/System")
+private val LAMBDA_REF_CLASS_ID = ClassId(FqName("com.wassimbeltaief.loupe.runtime.model"), Name.identifier("LambdaRef"))
 
 internal class LoupeIrTransformer(
     private val pluginContext: IrPluginContext,
@@ -105,6 +106,16 @@ internal class LoupeIrTransformer(
             .also { fn ->
                 if (fn == null) warn("System.identityHashCode not found — lambda params will be captured by value")
             }
+    }
+
+    private val lambdaRefClass by lazy {
+        pluginContext.referenceClass(LAMBDA_REF_CLASS_ID).also { cls ->
+            if (cls == null) warn("LambdaRef not found on classpath — lambda params will be recorded as raw Int")
+        }
+    }
+
+    private val lambdaRefCtor by lazy {
+        lambdaRefClass?.owner?.constructors?.singleOrNull { it.valueParameters.size == 1 }
     }
 
     private fun warn(msg: String) =
@@ -220,12 +231,16 @@ internal class LoupeIrTransformer(
         }
     }
 
-    // ── System.identityHashCode(param) ───────────────────────────────────────
+    // ── LambdaRef(System.identityHashCode(param)) ────────────────────────────
 
     private fun buildIdentityHashCode(param: IrValueParameter, builder: DeclarationIrBuilder): IrExpression? {
         val fn = identityHashCodeFn ?: return null
-        return builder.irCall(fn.symbol).also { call ->
+        val hashCall = builder.irCall(fn.symbol).also { call ->
             call.putValueArgument(0, builder.irGet(param))
+        }
+        val ctor = lambdaRefCtor ?: return hashCall  // fall back to raw Int if LambdaRef unavailable
+        return builder.irCallConstructor(ctor.symbol, emptyList()).also { call ->
+            call.putValueArgument(0, hashCall)
         }
     }
 
