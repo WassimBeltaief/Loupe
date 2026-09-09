@@ -16,15 +16,6 @@ import kotlin.test.assertTrue
 @OptIn(ExperimentalCompilerApi::class)
 class LoupeIrVisitorTest {
 
-    // Stub annotation with the real FQN — avoids adding compose-runtime to the plugin module.
-    // The plugin detects by FQN, so this behaves identically to the real annotation at IR level.
-    private val composableStub = SourceFile.kotlin(
-        "Composable.kt", """
-        package androidx.compose.runtime
-        annotation class Composable
-    """.trimIndent()
-    )
-
     @Test
     fun `finds @Composable functions and skips regular functions`() {
         val source = SourceFile.kotlin(
