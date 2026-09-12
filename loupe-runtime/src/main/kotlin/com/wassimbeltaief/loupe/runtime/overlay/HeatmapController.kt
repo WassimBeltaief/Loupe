@@ -76,13 +76,12 @@ internal class HeatmapController(
                     right = found.rect.right + origin.x,
                     bottom = found.rect.bottom + origin.y,
                 ),
-                // Badge shows the TOTAL (monotonic) — a window count would visibly
-                // decay to 0 and read as if the composable stopped being tracked.
+                // Badge and colour both reflect the TOTAL (monotonic) count — the
+                // heatmap highlights how much a composable has recomposed, so it
+                // must not cool down over time. Call reset() to clear it.
                 count = history.totalRecompositions,
-                // Colour still reflects activity in the rolling window, so the
-                // border cools from red → amber → green as churn stops.
                 severity = HeatmapMatcher.severityFor(
-                    history.windowRecompositions,
+                    history.totalRecompositions,
                     config.hotThreshold,
                     config.warmThreshold,
                 ),
