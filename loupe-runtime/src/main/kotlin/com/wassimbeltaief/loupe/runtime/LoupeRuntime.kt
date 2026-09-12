@@ -117,6 +117,7 @@ object LoupeRuntime {
     internal fun attachInspectionTables(tables: MutableSet<CompositionData>, contentView: View) {
         heatmapContentView = contentView
         heatmapController?.attach(tables)
+        Log.d("Loupe", "heatmap: host attached (tables=${tables.size}, view=${contentView.javaClass.simpleName})")
     }
 
     internal fun detachInspectionTables() {

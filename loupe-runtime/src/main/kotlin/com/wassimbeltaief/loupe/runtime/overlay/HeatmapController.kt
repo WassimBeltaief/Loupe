@@ -1,5 +1,6 @@
 package com.wassimbeltaief.loupe.runtime.overlay
 
+import android.util.Log
 import androidx.compose.runtime.tooling.CompositionData
 import androidx.compose.ui.tooling.data.UiToolingDataApi
 import androidx.compose.ui.tooling.data.asTree
@@ -63,10 +64,10 @@ internal class HeatmapController(
             return
         }
 
-        _boxes.value = raw.mapNotNull { found ->
-            val history = snapshot[found.key] ?: return@mapNotNull null
+        val boxes = raw.mapNotNull { found ->
+            val history = resolve(snapshot, found) ?: return@mapNotNull null
             HeatmapBox(
-                key = found.key,
+                key = history.key,
                 name = found.name,
                 rect = IntRect(
                     left = found.rect.left + origin.x,
@@ -82,5 +83,38 @@ internal class HeatmapController(
                 ),
             )
         }
+        _boxes.value = boxes
+        logDiagnostics(raw, boxes, snapshot)
+    }
+
+    /**
+     * Key match first; fall back to the composable's simple name when the tooling
+     * group's source file is unavailable or formatted differently (#37 keys are
+     * `FileName.Function`, so the last segment is the function name).
+     */
+    private fun resolve(
+        snapshot: Map<String, RecompositionHistory>,
+        found: HeatmapMatcher.RawBox,
+    ): RecompositionHistory? =
+        snapshot[found.key]
+            ?: snapshot.values.firstOrNull { it.key.substringAfterLast('.') == found.name }
+
+    // Throttled diagnostics — heatmap issues are otherwise invisible (debug builds only)
+    private var lastDiagnosticNs = 0L
+
+    private fun logDiagnostics(
+        raw: List<HeatmapMatcher.RawBox>,
+        boxes: List<HeatmapBox>,
+        snapshot: Map<String, RecompositionHistory>,
+    ) {
+        val now = System.nanoTime()
+        if (now - lastDiagnosticNs < 2_000_000_000L) return
+        lastDiagnosticNs = now
+        Log.d(
+            "Loupe",
+            "heatmap: tables=${tables.size} raw=${raw.size} matched=${boxes.size} " +
+                "rawNames=${raw.map { it.name }.distinct().take(6)} " +
+                "historyKeys=${snapshot.keys.take(6)}",
+        )
     }
 }

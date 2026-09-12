@@ -124,6 +124,7 @@ internal class LoupeOverlayManager(private val application: Application) {
 
         windowManager.addView(view, params)
         heatmapView = view
+        Log.d("Loupe", "heatmap: window added")
     }
 
     /**
