@@ -98,4 +98,61 @@ class RecompositionRegistryTest {
         reg.record("Card", "Card.kt", 1, arrayOf("n" to 1))
         assertEquals(1, reg.state.value["Card"]!!.totalRecompositions)
     }
+
+    // ── #36: duration measurement ────────────────────────────────────────────
+
+    @Test
+    fun `recordEnd sets duration on the matching record`() {
+        var now = 1_000_000_000L
+        val reg = registry(time = { now })
+        reg.record("Card", "Card.kt", 1, arrayOf("n" to 1))
+        now += 2_500_000L // body took 2.5ms
+        reg.recordEnd("Card")
+
+        val history = reg.snapshot()["Card"]!!
+        assertEquals(2_500_000L, history.records[0].durationNs)
+        assertEquals(2.5f, history.totalDurationMs, 0.001f)
+    }
+
+    @Test
+    fun `recordEnd pairs LIFO for recursive composables`() {
+        var now = 1_000_000_000L
+        val reg = registry(time = { now })
+        reg.record("Tree", "Tree.kt", 1, arrayOf("d" to 0))   // outer
+        now += 100_000L
+        reg.record("Tree", "Tree.kt", 1, arrayOf("d" to 1))   // inner (recursive)
+        now += 100_000L
+        reg.recordEnd("Tree")                                  // inner ends first
+        now += 100_000L
+        reg.recordEnd("Tree")                                  // then outer
+
+        val records = reg.snapshot()["Tree"]!!.records
+        // records are newest-first: [inner, outer]
+        assertEquals(100_000L, records[0].durationNs, "inner duration")
+        assertEquals(300_000L, records[1].durationNs, "outer duration")
+    }
+
+    @Test
+    fun `recordEnd without a matching record is a no-op`() {
+        val reg = registry()
+        reg.recordEnd("Ghost")           // key never recorded
+        reg.record("Card", "Card.kt", 1, arrayOf("n" to 1))
+        reg.recordEnd("Card")
+        reg.recordEnd("Card")            // double-end: second one has no unset record
+        assertEquals(1, reg.snapshot()["Card"]!!.totalRecompositions)
+    }
+
+    @Test
+    fun `records without recordEnd are excluded from total duration`() {
+        var now = 1_000_000_000L
+        val reg = registry(time = { now })
+        reg.record("Card", "Card.kt", 1, arrayOf("n" to 1))
+        now += 1_000_000L
+        reg.recordEnd("Card")
+        reg.record("Card", "Card.kt", 1, arrayOf("n" to 2))   // never ended (exception in finally? registry swap?)
+
+        val history = reg.snapshot()["Card"]!!
+        assertEquals(2, history.totalRecompositions)
+        assertEquals(1.0f, history.totalDurationMs, 0.001f, "only the ended record contributes")
+    }
 }

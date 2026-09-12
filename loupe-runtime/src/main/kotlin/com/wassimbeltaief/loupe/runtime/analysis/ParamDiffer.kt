@@ -20,13 +20,23 @@ object ParamDiffer {
             val previousStr = prev.truncated()
             val verdict = when {
                 value is LambdaRef -> if (value != prev) ParamVerdict.LambdaIdentity else ParamVerdict.Unchanged
-                value == prev -> ParamVerdict.Unchanged
+                safeEquals(value, prev) -> ParamVerdict.Unchanged
                 else -> ParamVerdict.Changed
             }
-            ParamSnapshot(name, previousStr, currentStr, verdict)
+            val suggestion = if (verdict == ParamVerdict.Changed) {
+                SuggestionEngine.forChangedValue(name, value)
+            } else {
+                null
+            }
+            ParamSnapshot(name, previousStr, currentStr, verdict, suggestion)
         }
     }
 
+    // A throwing toString() on a host-app object must never crash the app (#38)
     private fun Any?.truncated(): String =
-        toString().take(MAX_VALUE_LENGTH)
+        runCatching { toString() }.getOrDefault("<toString error>").take(MAX_VALUE_LENGTH)
+
+    // A throwing equals() is treated as "changed" — conservative, never crashes (#38)
+    private fun safeEquals(a: Any?, b: Any?): Boolean =
+        runCatching { a == b }.getOrDefault(false)
 }

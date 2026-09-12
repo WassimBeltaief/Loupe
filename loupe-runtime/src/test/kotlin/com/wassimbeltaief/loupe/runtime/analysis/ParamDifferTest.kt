@@ -86,4 +86,33 @@ class ParamDifferTest {
         ).single()
         assertEquals(120, snapshot.currentValue.length)
     }
+
+    // ── #38: hostile host-app objects must never crash the app ──────────────
+
+    private class ThrowingToString {
+        override fun toString(): String = throw RuntimeException("boom")
+    }
+
+    @Test
+    fun `throwing toString produces placeholder, no crash`() {
+        val snapshot = ParamDiffer.diff(
+            previous = emptyMap(),
+            current = arrayOf("obj" to ThrowingToString()),
+        ).single()
+        assertEquals("<toString error>", snapshot.currentValue)
+    }
+
+    private class ThrowingEquals {
+        override fun equals(other: Any?): Boolean = throw RuntimeException("boom")
+        override fun hashCode(): Int = 0
+    }
+
+    @Test
+    fun `throwing equals is treated as changed, no crash`() {
+        val snapshot = ParamDiffer.diff(
+            previous = mapOf("obj" to ThrowingEquals()),
+            current = arrayOf("obj" to ThrowingEquals()),
+        ).single()
+        assertEquals(ParamVerdict.Changed, snapshot.verdict)
+    }
 }
