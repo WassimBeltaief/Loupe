@@ -15,6 +15,9 @@ class LoupePlugin : CompilerPluginRegistrar() {
 
     override fun ExtensionStorage.registerExtensions(configuration: CompilerConfiguration) {
         val messageCollector = configuration.messageCollector
-        IrGenerationExtension.registerExtension(LoupeIrGenerationExtension(messageCollector))
+        val packageFilter = configuration.get(LoupeConfigurationKeys.KEY_PACKAGE_FILTER, emptyList())
+        IrGenerationExtension.registerExtension(
+            LoupeIrGenerationExtension(messageCollector, packageFilter = packageFilter)
+        )
     }
 }
