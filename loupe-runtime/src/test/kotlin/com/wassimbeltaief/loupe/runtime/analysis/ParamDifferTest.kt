@@ -115,4 +115,47 @@ class ParamDifferTest {
         ).single()
         assertEquals(ParamVerdict.Changed, snapshot.verdict)
     }
+
+    // ── #20: PII auto-redaction ──────────────────────────────────────────────
+
+    @Test
+    fun `email addresses are redacted`() {
+        val snapshot = ParamDiffer.diff(
+            previous = emptyMap(),
+            current = arrayOf("email" to "qa.tester@company.com"),
+        ).single()
+        assertEquals("[redacted]", snapshot.currentValue)
+    }
+
+    @Test
+    fun `credit-card-like numbers are redacted`() {
+        for (card in listOf("4111111111111111", "4111 1111 1111 1111", "4111-1111-1111-1111")) {
+            val snapshot = ParamDiffer.diff(
+                previous = emptyMap(),
+                current = arrayOf("card" to card),
+            ).single()
+            assertEquals("[redacted]", snapshot.currentValue, "expected redaction for: $card")
+        }
+    }
+
+    @Test
+    fun `ordinary strings are not redacted`() {
+        for (safe in listOf("Widget Pro", "12345", "2026-09-12", "user@host", "42")) {
+            val snapshot = ParamDiffer.diff(
+                previous = emptyMap(),
+                current = arrayOf("s" to safe),
+            ).single()
+            assertEquals(safe, snapshot.currentValue, "must NOT redact: $safe")
+        }
+    }
+
+    @Test
+    fun `redaction applies to previous value too`() {
+        val snapshot = ParamDiffer.diff(
+            previous = mapOf("email" to "old@company.com"),
+            current = arrayOf("email" to "new@company.com"),
+        ).single()
+        assertEquals("[redacted]", snapshot.previousValue)
+        assertEquals("[redacted]", snapshot.currentValue)
+    }
 }

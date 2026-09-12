@@ -263,6 +263,35 @@ class LoupeIrTransformerTest {
     }
 
     @Test
+    fun `redacts values of LoupeRedact-annotated types`() {
+        // #20: a param whose TYPE is @LoupeRedact must never have its value captured
+        val source = SourceFile.kotlin(
+            "Session.kt", """
+            import androidx.compose.runtime.Composable
+            import com.wassimbeltaief.loupe.runtime.LoupeRedact
+            @LoupeRedact
+            data class UserSession(val token: String)
+            @Composable
+            fun SessionScreen(session: UserSession, title: String) {}
+            """.trimIndent()
+        )
+
+        val (result, sink) = compileWithPlugin(source, extraStubs = listOf(loupeRedactStub))
+        assertEquals(KotlinCompilation.ExitCode.OK, result.exitCode, result.messages)
+
+        val sessionClass = result.classLoader.loadClass("UserSession")
+        val session = sessionClass.getConstructor(String::class.java).newInstance("secret-token-123")
+        result.callTopLevel("SessionKt", "SessionScreen",
+            sessionClass to session, String::class.java to "Hello")
+
+        assertEquals(1, sink.size)
+        @Suppress("UNCHECKED_CAST")
+        val params = sink[0]["params"] as Array<Pair<String, Any?>>
+        assertEquals("[redacted]", params[0].second, "@LoupeRedact type value must be redacted")
+        assertEquals("Hello", params[1].second, "non-redacted param unaffected")
+    }
+
+    @Test
     fun `recordEnd fires after body executes`() {
         // #36: body wrapped in try/finally — recordEnd(key) runs on normal exit
         val source = SourceFile.kotlin(

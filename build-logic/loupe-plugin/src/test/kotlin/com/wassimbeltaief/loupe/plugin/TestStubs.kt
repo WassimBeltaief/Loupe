@@ -23,6 +23,15 @@ val lambdaRefStub = SourceFile.kotlin(
     """.trimIndent()
 )
 
+val loupeRedactStub = SourceFile.kotlin(
+    "LoupeRedact.kt", """
+    package com.wassimbeltaief.loupe.runtime
+    @Target(AnnotationTarget.CLASS)
+    @Retention(AnnotationRetention.BINARY)
+    annotation class LoupeRedact
+    """.trimIndent()
+)
+
 val loupeRuntimeStub = SourceFile.kotlin(
     "LoupeRuntime.kt", """
     package com.wassimbeltaief.loupe.runtime

@@ -17,8 +17,12 @@ import org.jetbrains.kotlin.ir.builders.irImplicitCast
 import org.jetbrains.kotlin.ir.builders.irVararg
 import org.jetbrains.kotlin.ir.declarations.IrSimpleFunction
 import org.jetbrains.kotlin.ir.declarations.IrValueParameter
+import org.jetbrains.kotlin.ir.declarations.IrAnnotationContainer
+import org.jetbrains.kotlin.ir.expressions.IrBlock
 import org.jetbrains.kotlin.ir.expressions.IrBlockBody
+import org.jetbrains.kotlin.ir.expressions.IrCall
 import org.jetbrains.kotlin.ir.expressions.IrExpression
+import org.jetbrains.kotlin.ir.expressions.IrWhen
 import org.jetbrains.kotlin.ir.expressions.impl.IrBlockImpl
 import org.jetbrains.kotlin.ir.expressions.impl.IrConstImpl
 import org.jetbrains.kotlin.ir.expressions.impl.IrTryImpl
@@ -43,6 +47,7 @@ import org.jetbrains.kotlin.name.Name
 
 private val COMPOSABLE_FQN = FqName("androidx.compose.runtime.Composable")
 private val LOUPE_IGNORE_FQN = FqName("com.wassimbeltaief.loupe.runtime.LoupeIgnore")
+private val LOUPE_REDACT_FQN = FqName("com.wassimbeltaief.loupe.runtime.LoupeRedact")
 private val LOUPE_RUNTIME_CLASS_ID = ClassId.topLevel(FqName("com.wassimbeltaief.loupe.runtime.LoupeRuntime"))
 private val PAIR_CLASS_ID = ClassId(FqName("kotlin"), Name.identifier("Pair"))
 private val SYSTEM_CLASS_ID = ClassId.fromString("java/lang/System")
@@ -150,33 +155,64 @@ internal class LoupeIrTransformer(
 
         val recordCall = buildRecordCall(declaration) ?: return declaration
 
-        val originalStatements = body.statements.toList()
-        body.statements.clear()
-        body.statements += recordCall
+        // #40: this transform runs AFTER the Compose compiler's IR lowering (our
+        // injected calls appear after startRestartGroup in the emitted bytecode).
+        // Restartable composables therefore have the shape
+        //   [ startRestartGroup(...), …, if (cond) { <real body> } else { skipToGroupEnd() }, … ]
+        // record() must only fire when the body ACTUALLY executes — inside the
+        // true branch — otherwise skipped invocations are counted as recompositions.
+        // Falls back to the whole body when the pattern isn't found (non-restartable
+        // composables, unexpected shapes): invocation-counting, never a crash.
+        val container = findExecutedBodyContainer(body, name) ?: body.statements
+
+        val originalStatements = container.toList()
+        container.clear()
+        container += recordCall
 
         val recordEndCall = buildRecordEndCall(declaration)
         if (recordEndCall != null) {
-            // #36: wrap the whole original body in try/finally so duration is recorded
-            // on every exit path — early returns (incl. Compose restart-group skips)
-            // and exceptions alike. Semantics are unchanged: the body is Unit-typed.
+            // #36: wrap the original body in try/finally so duration is recorded
+            // on every exit path — early returns and exceptions alike.
+            // Semantics are unchanged: the body is Unit-typed.
             val tryBlock = IrBlockImpl(UNDEFINED_OFFSET, UNDEFINED_OFFSET, irBuiltIns.unitType).apply {
                 statements += originalStatements
             }
             val finallyBlock = IrBlockImpl(UNDEFINED_OFFSET, UNDEFINED_OFFSET, irBuiltIns.unitType).apply {
                 statements += recordEndCall
             }
-            body.statements += IrTryImpl(
+            container += IrTryImpl(
                 UNDEFINED_OFFSET, UNDEFINED_OFFSET, irBuiltIns.unitType,
                 tryResult = tryBlock,
                 catches = emptyList(),
                 finallyExpression = finallyBlock,
             )
         } else {
-            body.statements += originalStatements
+            container += originalStatements
         }
 
         messageCollector.report(CompilerMessageSeverity.LOGGING, "[Loupe] instrumenting: $name")
         return declaration
+    }
+
+    /**
+     * #40: finds the statement list of the restart-group's executed branch —
+     * the `if (…) { <body> } else { skipToGroupEnd() }` the Compose compiler
+     * lowers restartable composables into. Returns null when the pattern is
+     * absent (non-restartable composables, non-standard shapes).
+     */
+    private fun findExecutedBodyContainer(body: IrBlockBody, name: String): MutableList<IrStatement>? {
+        val skipCheck = body.statements.filterIsInstance<IrWhen>().firstOrNull { whenExpr ->
+            whenExpr.branches.getOrNull(1)?.result?.containsSkipToGroupEnd() == true
+        } ?: return null.also {
+            messageCollector.report(CompilerMessageSeverity.LOGGING, "[Loupe] $name: no restart-group pattern — recording invocations")
+        }
+        return (skipCheck.branches.firstOrNull()?.result as? IrBlock)?.statements
+    }
+
+    private fun IrExpression.containsSkipToGroupEnd(): Boolean = when (this) {
+        is IrCall -> symbol.owner.name.asString() == "skipToGroupEnd"
+        is IrBlock -> statements.any { (it as? IrExpression)?.containsSkipToGroupEnd() == true }
+        else -> false
     }
 
     private fun shouldInstrument(declaration: IrSimpleFunction): Boolean {
@@ -275,12 +311,13 @@ internal class LoupeIrTransformer(
 
         val pairs = userParams.map { param ->
             val nameArg = irString(param.name.asString())
+            // #20: @LoupeRedact types are never captured — privacy wins over everything.
             // Lambdas/callable refs: capture identity — instances are never equal across calls.
             // Fall back to value capture if System.identityHashCode is unavailable (stripped JDK).
-            val rawValue: IrExpression = if (param.type.isFunctionLikeType()) {
-                buildIdentityHashCode(param, builder) ?: builder.irGet(param)
-            } else {
-                builder.irGet(param)
+            val rawValue: IrExpression = when {
+                param.type.hasRedactAnnotation() -> irString("[redacted]")
+                param.type.isFunctionLikeType() -> buildIdentityHashCode(param, builder) ?: builder.irGet(param)
+                else -> builder.irGet(param)
             }
             val valueArg = builder.irImplicitCast(rawValue, anyNType)
             builder.irCallConstructor(ctor.symbol, listOf(irBuiltIns.stringType, anyNType)).also { pair ->
@@ -310,6 +347,12 @@ internal class LoupeIrTransformer(
     }
 
     // ── Type check ───────────────────────────────────────────────────────────
+
+    // #20: true when the param's type is annotated @LoupeRedact
+    private fun IrType.hasRedactAnnotation(): Boolean {
+        val owner = (this as? IrSimpleType)?.classifier?.owner
+        return (owner as? IrAnnotationContainer)?.hasAnnotation(LOUPE_REDACT_FQN) == true
+    }
 
     private fun IrType.isFunctionLikeType(): Boolean {
         if (this !is IrSimpleType) return false
