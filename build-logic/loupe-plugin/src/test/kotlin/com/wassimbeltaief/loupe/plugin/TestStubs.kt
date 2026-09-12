@@ -28,8 +28,12 @@ val loupeRuntimeStub = SourceFile.kotlin(
     package com.wassimbeltaief.loupe.runtime
     object LoupeRuntime {
         val calls = mutableListOf<Map<String, Any?>>()
+        val endCalls = mutableListOf<String>()
         fun record(key: String, file: String, line: Int, params: Array<Pair<String, Any?>>) {
             calls += mapOf("key" to key, "file" to file, "line" to line, "params" to params)
+        }
+        fun recordEnd(key: String) {
+            endCalls += key
         }
     }
     """.trimIndent()
