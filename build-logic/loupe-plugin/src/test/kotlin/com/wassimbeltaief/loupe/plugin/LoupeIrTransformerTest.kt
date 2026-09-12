@@ -70,7 +70,8 @@ class LoupeIrTransformerTest {
 
         // record was called
         assertEquals(1, sink.size)
-        assertEquals("CounterComposable", sink[0]["key"])
+        // #37: key is qualified with the file name when it differs from the function name
+        assertEquals("Counter.CounterComposable", sink[0]["key"])
 
         // user body also ran
         // Kotlin top-level var compiles to a private backing field — use declared + accessible
@@ -100,7 +101,7 @@ class LoupeIrTransformerTest {
         } catch (_: Exception) { /* expected */ }
 
         assertEquals(1, sink.size, "record must be called before user body throws")
-        assertEquals("ThrowingComposable", sink[0]["key"])
+        assertEquals("Thrower.ThrowingComposable", sink[0]["key"])
     }
 
     @Test
@@ -237,7 +238,7 @@ class LoupeIrTransformerTest {
             .invoke(null, "click")
 
         assertEquals(1, sink.size, "Only the in-filter composable should be instrumented")
-        assertEquals("Card", sink[0]["key"])
+        assertEquals("InFilter.Card", sink[0]["key"])
     }
 
     @Test
@@ -259,6 +260,92 @@ class LoupeIrTransformerTest {
         @Suppress("UNCHECKED_CAST")
         val params = sink[0]["params"] as Array<Pair<String, Any?>>
         assertTrue(params.isEmpty(), "Zero-param composable should have empty params array")
+    }
+
+    @Test
+    fun `recordEnd fires after body executes`() {
+        // #36: body wrapped in try/finally — recordEnd(key) runs on normal exit
+        val source = SourceFile.kotlin(
+            "Greeter.kt", """
+            import androidx.compose.runtime.Composable
+            @Composable
+            fun Greeter(name: String) {
+                val ignored = name.length
+            }
+            """.trimIndent()
+        )
+
+        val (result, sink) = compileWithPlugin(source)
+        assertEquals(KotlinCompilation.ExitCode.OK, result.exitCode, result.messages)
+
+        result.callTopLevel("GreeterKt", "Greeter", String::class.java to "hi")
+
+        assertEquals(1, sink.size)
+        assertEquals(listOf("Greeter"), endCalls(result))
+    }
+
+    @Test
+    fun `recordEnd fires even when user body throws`() {
+        // #36: finally semantics — duration must be recorded on the exception path too
+        val source = SourceFile.kotlin(
+            "Bomber.kt", """
+            import androidx.compose.runtime.Composable
+            @Composable
+            fun Bomber(n: Int) {
+                throw RuntimeException("user body")
+            }
+            """.trimIndent()
+        )
+
+        val (result, sink) = compileWithPlugin(source)
+        assertEquals(KotlinCompilation.ExitCode.OK, result.exitCode, result.messages)
+
+        try {
+            result.callTopLevel("BomberKt", "Bomber", Int::class.java to 1)
+        } catch (_: Exception) { /* expected */ }
+
+        assertEquals(1, sink.size, "record must fire before the body")
+        assertEquals(listOf("Bomber"), endCalls(result), "recordEnd must fire from finally")
+    }
+
+    /** Reads LoupeRuntime.endCalls from the compiled classloader (populated by recordEnd). */
+    private fun endCalls(result: JvmCompilationResult): List<String> {
+        val runtimeClass = result.classLoader.loadClass("com.wassimbeltaief.loupe.runtime.LoupeRuntime")
+        val instance = runtimeClass.getField("INSTANCE").get(null)
+        @Suppress("UNCHECKED_CAST")
+        return runtimeClass.getMethod("getEndCalls").invoke(instance) as List<String>
+    }
+
+    @Test
+    fun `same-named composables in different files get distinct keys`() {
+        // #37: unqualified keys would merge these into one history
+        val sourceA = SourceFile.kotlin(
+            "HomeScreen.kt", """
+            package com.myapp.home
+            import androidx.compose.runtime.Composable
+            @Composable
+            fun Header(title: String) {}
+            """.trimIndent()
+        )
+        val sourceB = SourceFile.kotlin(
+            "ProfileScreen.kt", """
+            package com.myapp.profile
+            import androidx.compose.runtime.Composable
+            @Composable
+            fun Header(title: String) {}
+            """.trimIndent()
+        )
+
+        val (result, sink) = compileWithPlugin(sourceA, extraSources = listOf(sourceB))
+        assertEquals(KotlinCompilation.ExitCode.OK, result.exitCode, result.messages)
+
+        result.classLoader.loadClass("com.myapp.home.HomeScreenKt")
+            .getMethod("Header", String::class.java).invoke(null, "a")
+        result.classLoader.loadClass("com.myapp.profile.ProfileScreenKt")
+            .getMethod("Header", String::class.java).invoke(null, "b")
+
+        val keys = sink.map { it["key"] }
+        assertEquals(listOf("HomeScreen.Header", "ProfileScreen.Header"), keys)
     }
 
     // ── Helpers ──────────────────────────────────────────────────────────────

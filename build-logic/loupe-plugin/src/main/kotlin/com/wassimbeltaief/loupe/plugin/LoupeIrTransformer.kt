@@ -19,7 +19,9 @@ import org.jetbrains.kotlin.ir.declarations.IrSimpleFunction
 import org.jetbrains.kotlin.ir.declarations.IrValueParameter
 import org.jetbrains.kotlin.ir.expressions.IrBlockBody
 import org.jetbrains.kotlin.ir.expressions.IrExpression
+import org.jetbrains.kotlin.ir.expressions.impl.IrBlockImpl
 import org.jetbrains.kotlin.ir.expressions.impl.IrConstImpl
+import org.jetbrains.kotlin.ir.expressions.impl.IrTryImpl
 import org.jetbrains.kotlin.ir.symbols.IrClassSymbol
 import org.jetbrains.kotlin.ir.symbols.IrTypeParameterSymbol
 import org.jetbrains.kotlin.ir.types.IrSimpleType
@@ -73,6 +75,18 @@ internal class LoupeIrTransformer(
                 fn.owner.valueParameters[0].name.asString() == "key"
         }.also { fn ->
             if (fn == null) warn("LoupeRuntime.record(key,file,line,params) not found — no composables will be instrumented")
+        }
+    }
+
+    // #36: duration measurement counterpart to record() — emitted in a finally block
+    private val recordEndFn by lazy {
+        pluginContext.referenceFunctions(
+            CallableId(LOUPE_RUNTIME_CLASS_ID, Name.identifier("recordEnd"))
+        ).firstOrNull { fn ->
+            fn.owner.valueParameters.size == 1 &&
+                fn.owner.valueParameters[0].name.asString() == "key"
+        }.also { fn ->
+            if (fn == null) warn("LoupeRuntime.recordEnd(key) not found — duration measurement disabled")
         }
     }
 
@@ -135,7 +149,32 @@ internal class LoupeIrTransformer(
         onComposableFound?.invoke(name)
 
         val recordCall = buildRecordCall(declaration) ?: return declaration
-        body.statements.add(0, recordCall)
+
+        val originalStatements = body.statements.toList()
+        body.statements.clear()
+        body.statements += recordCall
+
+        val recordEndCall = buildRecordEndCall(declaration)
+        if (recordEndCall != null) {
+            // #36: wrap the whole original body in try/finally so duration is recorded
+            // on every exit path — early returns (incl. Compose restart-group skips)
+            // and exceptions alike. Semantics are unchanged: the body is Unit-typed.
+            val tryBlock = IrBlockImpl(UNDEFINED_OFFSET, UNDEFINED_OFFSET, irBuiltIns.unitType).apply {
+                statements += originalStatements
+            }
+            val finallyBlock = IrBlockImpl(UNDEFINED_OFFSET, UNDEFINED_OFFSET, irBuiltIns.unitType).apply {
+                statements += recordEndCall
+            }
+            body.statements += IrTryImpl(
+                UNDEFINED_OFFSET, UNDEFINED_OFFSET, irBuiltIns.unitType,
+                tryResult = tryBlock,
+                catches = emptyList(),
+                finallyExpression = finallyBlock,
+            )
+        } else {
+            body.statements += originalStatements
+        }
+
         messageCollector.report(CompilerMessageSeverity.LOGGING, "[Loupe] instrumenting: $name")
         return declaration
     }
@@ -160,6 +199,7 @@ internal class LoupeIrTransformer(
         val fn = recordFn ?: return null
 
         val file = File(declaration.file.fileEntry.name).name
+        val key = recordKey(declaration, file)
         // Any negative offset (UNDEFINED_OFFSET = -1, SYNTHETIC_OFFSET = Int.MIN_VALUE/2, …) means no real source location.
         val line = if (declaration.startOffset >= 0) {
             declaration.file.fileEntry.getLineNumber(declaration.startOffset) + 1
@@ -174,10 +214,35 @@ internal class LoupeIrTransformer(
 
         return builder.irCall(fn).also { call ->
             call.dispatchReceiver = builder.irGetObjectValue(rc.owner.defaultType, rc)
-            call.putValueArgument(0, irString(declaration.name.asString()))
+            call.putValueArgument(0, irString(key))
             call.putValueArgument(1, irString(file))
             call.putValueArgument(2, irInt(line))
             call.putValueArgument(3, paramsArray)
+        }
+    }
+
+    // #37: qualify the key with the file name so same-named composables in
+    // different files (and most overloads) don't merge into one history.
+    // Prefix is dropped when file == function (the common "ProductCard.kt
+    // hosts ProductCard" case) to keep the overlay display clean.
+    // Residual collision: same file name in different packages + same
+    // function name — accepted for readability of the key as display string.
+    private fun recordKey(declaration: IrSimpleFunction, file: String): String {
+        val name = declaration.name.asString()
+        val fileBase = file.removeSuffix(".kt")
+        return if (fileBase == name) name else "$fileBase.$name"
+    }
+
+    // ── recordEnd(key) call — injected into the finally block (#36) ─────────
+
+    private fun buildRecordEndCall(declaration: IrSimpleFunction): IrExpression? {
+        val rc = runtimeClass ?: return null
+        val fn = recordEndFn ?: return null
+        val file = File(declaration.file.fileEntry.name).name
+        val builder = DeclarationIrBuilder(pluginContext, declaration.symbol)
+        return builder.irCall(fn).also { call ->
+            call.dispatchReceiver = builder.irGetObjectValue(rc.owner.defaultType, rc)
+            call.putValueArgument(0, irString(recordKey(declaration, file)))
         }
     }
 
