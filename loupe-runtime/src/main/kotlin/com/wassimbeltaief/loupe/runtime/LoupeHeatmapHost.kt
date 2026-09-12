@@ -30,6 +30,11 @@ import kotlinx.coroutines.delay
 fun LoupeHeatmapHost(content: @Composable () -> Unit) {
     val tables = remember { mutableSetOf<CompositionData>() }
     val view = LocalView.current
+    // Enable source-information collection, otherwise tooling CallGroups have no
+    // name (Recomposer.collectingSourceInformation is false by default). This is
+    // exactly what Compose's own Inspectable() does, and is required for
+    // HeatmapMatcher to resolve composable names. Must run before content().
+    currentComposer.collectParameterInformation()
     // The composition this host belongs to (the app's root composition). The
     // CompositionLocal below only reaches SUBcompositions — the root must be
     // registered explicitly, exactly as Compose's own Inspectable() does.
