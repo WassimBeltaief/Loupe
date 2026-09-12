@@ -25,8 +25,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import com.wassimbeltaief.loupe.runtime.LoupeRuntime
-import com.wassimbeltaief.loupe.runtime.model.LambdaRef
 
 @Composable
 fun WizardScenario(onBack: () -> Unit) {
@@ -102,16 +100,6 @@ fun WizardScenario(onBack: () -> Unit) {
 
 @Composable
 private fun WizardStep1(name: String, onNameChange: (String) -> Unit, onNext: () -> Unit) {
-    LoupeRuntime.record(
-        key = "WizardStep1",
-        file = "WizardScenario.kt",
-        line = 102,
-        params = arrayOf(
-            "name" to name,
-            "onNameChange" to LambdaRef(System.identityHashCode(onNameChange)),
-            "onNext" to LambdaRef(System.identityHashCode(onNext)),
-        ),
-    )
     Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
         Text(
             text = "What's your name?",
@@ -143,16 +131,6 @@ private fun WizardStep2(
     onNext: () -> Unit,
     onBack: () -> Unit,
 ) {
-    LoupeRuntime.record(
-        key = "WizardStep2",
-        file = "WizardScenario.kt",
-        line = 133,
-        params = arrayOf(
-            "email" to email,
-            "onEmailChange" to LambdaRef(System.identityHashCode(onEmailChange)),
-            "onNext" to LambdaRef(System.identityHashCode(onNext)),
-        ),
-    )
     Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
         Text(
             text = "What's your email?",
@@ -193,16 +171,6 @@ private fun WizardStep3(
     onFinish: () -> Unit,
     onBack: () -> Unit,
 ) {
-    LoupeRuntime.record(
-        key = "WizardStep3",
-        file = "WizardScenario.kt",
-        line = 169,
-        params = arrayOf(
-            "notes" to notes,
-            "onNotesChange" to LambdaRef(System.identityHashCode(onNotesChange)),
-            "onFinish" to LambdaRef(System.identityHashCode(onFinish)),
-        ),
-    )
     Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
         Text(
             text = "Any notes?",
