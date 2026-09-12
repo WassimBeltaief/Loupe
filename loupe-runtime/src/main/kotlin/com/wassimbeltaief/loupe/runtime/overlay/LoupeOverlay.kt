@@ -18,6 +18,6 @@ internal fun LoupeOverlay(
         composables = composables,
         config = config,
         onPause = LoupeRuntime::pause,
-        onDismiss = {},
+        onDismiss = LoupeRuntime::dismissOverlay,
     )
 }
