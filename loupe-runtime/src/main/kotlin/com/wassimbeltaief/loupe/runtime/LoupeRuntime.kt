@@ -13,6 +13,8 @@ object LoupeRuntime {
 
     @Volatile private var config = LoupeConfig()
     @Volatile private var paused = false
+    @Volatile private var overlayDismissed = false
+    @Volatile private var sessionStartMs = System.currentTimeMillis()
 
     private var registry = RecompositionRegistry(
         maxHistoryEntries = config.maxHistoryEntries,
@@ -30,7 +32,9 @@ object LoupeRuntime {
             overlayManager = manager
             ProcessLifecycleOwner.get().lifecycle.addObserver(object : DefaultLifecycleObserver {
                 override fun onStart(owner: LifecycleOwner) {
-                    manager.show(stateFlow = registry.state, config = this@LoupeRuntime.config)
+                    if (!overlayDismissed) {
+                        manager.show(stateFlow = registry.state, config = this@LoupeRuntime.config)
+                    }
                 }
                 override fun onStop(owner: LifecycleOwner) {
                     manager.dismiss()
@@ -48,6 +52,7 @@ object LoupeRuntime {
 
     fun configure(config: LoupeConfig) {
         this.config = config
+        sessionStartMs = System.currentTimeMillis()
         registry = RecompositionRegistry(
             maxHistoryEntries = config.maxHistoryEntries,
             windowNs = config.windowSeconds * 1_000_000_000L,
@@ -56,6 +61,12 @@ object LoupeRuntime {
 
     fun pause() { paused = true }
     fun resume() { paused = false }
+
+    // Hides the overlay for the rest of the session (header ✕ button)
+    fun dismissOverlay() {
+        overlayDismissed = true
+        overlayManager?.dismiss()
+    }
 
     fun reset() {
         registry.reset()
@@ -67,7 +78,7 @@ object LoupeRuntime {
         val hot = snap.values.filter { it.windowRecompositions >= config.hotThreshold }
         val warm = snap.values.filter { it.windowRecompositions in config.warmThreshold until config.hotThreshold }
         return LoupeReport(
-            durationMs = 0L,
+            durationMs = System.currentTimeMillis() - sessionStartMs,
             composables = snap,
             totalRecompositions = snap.values.sumOf { it.totalRecompositions },
             hotComposables = hot,
