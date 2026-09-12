@@ -2,6 +2,11 @@ plugins {
     alias(libs.plugins.android.app)
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
+    id("com.wassimbeltaief.loupe")
+}
+
+loupe {
+    packageFilter.set(listOf("com.wassimbeltaief.loupe.sample"))
 }
 
 android {

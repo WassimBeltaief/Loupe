@@ -22,8 +22,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import com.wassimbeltaief.loupe.runtime.LoupeRuntime
-import com.wassimbeltaief.loupe.runtime.model.LambdaRef
 
 @Composable
 fun LambdaIdentityScenario(onBack: () -> Unit) {
@@ -91,15 +89,6 @@ fun LambdaIdentityScenario(onBack: () -> Unit) {
 
 @Composable
 private fun ButtonWithCallback(label: String, onClick: () -> Unit) {
-    LoupeRuntime.record(
-        key = "ButtonWithCallback",
-        file = "LambdaIdentityScenario.kt",
-        line = 82,
-        params = arrayOf(
-            "label" to label,
-            "onClick" to LambdaRef(System.identityHashCode(onClick)),
-        ),
-    )
     Button(
         onClick = onClick,
         modifier = Modifier.fillMaxWidth(),

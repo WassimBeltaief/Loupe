@@ -1,6 +1,7 @@
 package com.wassimbeltaief.loupe.runtime.overlay
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -14,6 +15,10 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -44,6 +49,8 @@ internal fun OverlayListPanel(
         .sortedByDescending { it.windowRecompositions }
         .take(6)
     val maxWindow = ranked.firstOrNull()?.windowRecompositions?.coerceAtLeast(1) ?: 1
+    // Session-scoped: once dismissed, the hint does not reappear
+    var hintVisible by remember { mutableStateOf(true) }
 
     Column(
         modifier = modifier
@@ -72,6 +79,25 @@ internal fun OverlayListPanel(
                 color = ColorOnSurface.copy(alpha = 0.6f),
                 fontSize = 10.sp,
             )
+            Spacer(Modifier.width(8.dp))
+            Text(
+                text = "⏸",
+                color = ColorOnSurface,
+                fontSize = 12.sp,
+                modifier = Modifier
+                    .clip(CircleShape)
+                    .clickable(onClick = onPause)
+                    .padding(horizontal = 4.dp),
+            )
+            Text(
+                text = "✕",
+                color = ColorOnSurface,
+                fontSize = 12.sp,
+                modifier = Modifier
+                    .clip(CircleShape)
+                    .clickable(onClick = onDismiss)
+                    .padding(horizontal = 4.dp),
+            )
         }
 
         Spacer(Modifier.height(4.dp))
@@ -93,19 +119,36 @@ internal fun OverlayListPanel(
             }
         }
 
-        // Hint strip
-        Spacer(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(1.dp)
-                .background(ColorDivider),
-        )
-        Text(
-            text = "long-press any row to inspect history",
-            color = ColorOnSurface.copy(alpha = 0.4f),
-            fontSize = 9.sp,
-            modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
-        )
+        // Hint strip — dismissible, does not reappear once closed
+        if (hintVisible) {
+            Spacer(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(1.dp)
+                    .background(ColorDivider),
+            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = "long-press any row to inspect history",
+                    color = ColorOnSurface.copy(alpha = 0.4f),
+                    fontSize = 9.sp,
+                    modifier = Modifier
+                        .weight(1f)
+                        .padding(horizontal = 10.dp, vertical = 4.dp),
+                )
+                Text(
+                    text = "✕",
+                    color = ColorOnSurface.copy(alpha = 0.4f),
+                    fontSize = 9.sp,
+                    modifier = Modifier
+                        .clickable { hintVisible = false }
+                        .padding(horizontal = 10.dp, vertical = 4.dp),
+                )
+            }
+        }
     }
 }
 

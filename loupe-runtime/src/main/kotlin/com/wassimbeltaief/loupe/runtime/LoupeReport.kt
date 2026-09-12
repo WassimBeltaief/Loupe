@@ -69,15 +69,18 @@ data class LoupeReport(
 
     fun printSummary() {
         println("Loupe recomposition report  (${durationMs}ms)")
-        println("%-30s %6s  %10s  %s".format("Composable", "Count", "Cost", "Status"))
-        println("─".repeat(60))
+        println("%-30s %6s  %10s  %-28s %s".format("Composable", "Count", "Cost", "Top blame", "Status"))
+        println("─".repeat(88))
         composables.values.sortedByDescending { it.totalRecompositions }.forEach { h ->
             val status = when {
                 hotComposables.any { it.key == h.key } -> "HOT"
                 warmComposables.any { it.key == h.key } -> "WARM"
                 else -> "OK"
             }
-            println("%-30s %6d  %8.1fms  %s".format(h.key, h.totalRecompositions, h.totalDurationMs, status))
+            val topBlame = h.blamedParams.firstOrNull()
+                ?.let { "${it.name} (${it.dominantVerdict::class.simpleName})" }
+                ?: "—"
+            println("%-30s %6d  %8.1fms  %-28s %s".format(h.key, h.totalRecompositions, h.totalDurationMs, topBlame, status))
         }
     }
 }

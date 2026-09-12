@@ -2,6 +2,11 @@ plugins {
     alias(libs.plugins.kotlin.jvm)
 }
 
+// Coordinates must stay in sync with LoupeGradlePlugin's getPluginArtifact() —
+// composite-build substitution resolves the compiler plugin JAR by group + name.
+group = "com.wassimbeltaief"
+version = "1.0.0-alpha01"
+
 dependencies {
     // The Kotlin compiler itself — available at build time, not bundled into our jar
     compileOnly(libs.kotlin.compiler)

@@ -22,7 +22,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import com.wassimbeltaief.loupe.runtime.LoupeRuntime
 
 @Composable
 fun StableScenario(onBack: () -> Unit) {
@@ -100,15 +99,6 @@ fun StableScenario(onBack: () -> Unit) {
 
 @Composable
 private fun ProfileCard(name: String, role: String) {
-    LoupeRuntime.record(
-        key = "ProfileCard",
-        file = "StableScenario.kt",
-        line = 83,
-        params = arrayOf(
-            "name" to name,
-            "role" to role,
-        ),
-    )
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
         Text(
             text = name,
