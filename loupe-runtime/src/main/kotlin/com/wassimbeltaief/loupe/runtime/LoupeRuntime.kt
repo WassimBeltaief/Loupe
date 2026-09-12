@@ -50,6 +50,12 @@ object LoupeRuntime {
         registry.record(key, file, line, params)
     }
 
+    // Called exclusively by compiler-injected code, from the finally block
+    // wrapping the composable body (#36 duration measurement)
+    fun recordEnd(key: String) {
+        registry.recordEnd(key)
+    }
+
     fun configure(config: LoupeConfig) {
         this.config = config
         sessionStartMs = System.currentTimeMillis()
