@@ -127,7 +127,7 @@ internal fun DrillDownPanel(
                     )
                     Text(
                         text = "${history.totalRecompositions}x · " +
-                            "${"%.1f".format(history.totalDurationMs)}ms total · " +
+                            "${"%.1f".format(java.util.Locale.US, history.totalDurationMs)}ms total · " +
                             "${history.windowRecompositions} in window",
                         color = LoupeColors.OnSurface.copy(alpha = 0.7f),
                         fontSize = 11.sp,
