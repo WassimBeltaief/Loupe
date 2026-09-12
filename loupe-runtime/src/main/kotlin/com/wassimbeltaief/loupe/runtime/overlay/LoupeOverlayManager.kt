@@ -24,6 +24,8 @@ internal class LoupeOverlayManager(private val application: Application) {
 
     private var overlayView: ComposeView? = null
     private var lifecycleOwner: OverlayLifecycleOwner? = null
+    private var collapsedGravity: Int = Gravity.BOTTOM or Gravity.START
+    private var drillDownOpen = false
 
     fun show(
         stateFlow: StateFlow<Map<String, RecompositionHistory>>,
@@ -36,6 +38,13 @@ internal class LoupeOverlayManager(private val application: Application) {
             return
         }
 
+        collapsedGravity = when (config.overlayPosition) {
+            OverlayPosition.TopStart -> Gravity.TOP or Gravity.START
+            OverlayPosition.TopEnd -> Gravity.TOP or Gravity.END
+            OverlayPosition.BottomStart -> Gravity.BOTTOM or Gravity.START
+            OverlayPosition.BottomEnd -> Gravity.BOTTOM or Gravity.END
+        }
+
         val owner = OverlayLifecycleOwner().also {
             it.start()
             lifecycleOwner = it
@@ -45,14 +54,13 @@ internal class LoupeOverlayManager(private val application: Application) {
             setViewTreeLifecycleOwner(owner)
             setViewTreeViewModelStoreOwner(owner)
             setViewTreeSavedStateRegistryOwner(owner)
-            setContent { LoupeOverlay(stateFlow = stateFlow, config = config) }
-        }
-
-        val gravity = when (config.overlayPosition) {
-            OverlayPosition.TopStart -> Gravity.TOP or Gravity.START
-            OverlayPosition.TopEnd -> Gravity.TOP or Gravity.END
-            OverlayPosition.BottomStart -> Gravity.BOTTOM or Gravity.START
-            OverlayPosition.BottomEnd -> Gravity.BOTTOM or Gravity.END
+            setContent {
+                LoupeOverlay(
+                    stateFlow = stateFlow,
+                    config = config,
+                    onModeChange = ::setDrillDownMode,
+                )
+            }
         }
 
         val params = WindowManager.LayoutParams(
@@ -63,13 +71,40 @@ internal class LoupeOverlayManager(private val application: Application) {
                 WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL,
             PixelFormat.TRANSLUCENT,
         ).apply {
-            this.gravity = gravity
+            gravity = collapsedGravity
             x = 12
             y = 12
         }
 
         windowManager.addView(view, params)
         overlayView = view
+    }
+
+    /**
+     * #18: switches the overlay window between the collapsed corner card and the
+     * full-width bottom sheet (drill-down). Touches outside the sheet still pass
+     * through to the app (FLAG_NOT_TOUCH_MODAL) — the sheet never closes on
+     * outside tap, per spec.
+     */
+    fun setDrillDownMode(open: Boolean) {
+        if (drillDownOpen == open) return
+        drillDownOpen = open
+        val view = overlayView ?: return
+        val params = view.layoutParams as WindowManager.LayoutParams
+        if (open) {
+            params.width = WindowManager.LayoutParams.MATCH_PARENT
+            params.height = WindowManager.LayoutParams.WRAP_CONTENT
+            params.gravity = Gravity.BOTTOM
+            params.x = 0
+            params.y = 0
+        } else {
+            params.width = WindowManager.LayoutParams.WRAP_CONTENT
+            params.height = WindowManager.LayoutParams.WRAP_CONTENT
+            params.gravity = collapsedGravity
+            params.x = 12
+            params.y = 12
+        }
+        windowManager.updateViewLayout(view, params)
     }
 
     fun dismiss() {

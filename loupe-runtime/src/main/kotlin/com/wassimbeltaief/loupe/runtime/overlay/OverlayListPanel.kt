@@ -1,7 +1,9 @@
 package com.wassimbeltaief.loupe.runtime.overlay
 
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -30,12 +32,12 @@ import androidx.compose.ui.unit.sp
 import com.wassimbeltaief.loupe.runtime.LoupeConfig
 import com.wassimbeltaief.loupe.runtime.model.RecompositionHistory
 
-private val ColorHot = Color(0xFFE24B4A)
-private val ColorWarm = Color(0xFFEF9F27)
-private val ColorHealthy = Color(0xFF1D9E75)
-private val ColorSurface = Color(0xF0121212)
-private val ColorOnSurface = Color(0xFFEEEEEE)
-private val ColorDivider = Color(0xFF2A2A2A)
+private val ColorHot = LoupeColors.Hot
+private val ColorWarm = LoupeColors.Warm
+private val ColorHealthy = LoupeColors.Healthy
+private val ColorSurface = LoupeColors.Surface
+private val ColorOnSurface = LoupeColors.OnSurface
+private val ColorDivider = LoupeColors.Divider
 
 @Composable
 internal fun OverlayListPanel(
@@ -43,6 +45,7 @@ internal fun OverlayListPanel(
     config: LoupeConfig,
     onPause: () -> Unit,
     onDismiss: () -> Unit,
+    onInspect: (RecompositionHistory) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val ranked = composables.values
@@ -115,6 +118,7 @@ internal fun OverlayListPanel(
                     history = history,
                     maxWindow = maxWindow,
                     config = config,
+                    onInspect = { onInspect(history) },
                 )
             }
         }
@@ -152,11 +156,13 @@ internal fun OverlayListPanel(
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun ComposableRow(
     history: RecompositionHistory,
     maxWindow: Int,
     config: LoupeConfig,
+    onInspect: () -> Unit,
 ) {
     val color = when {
         history.windowRecompositions >= config.hotThreshold -> ColorHot
@@ -168,6 +174,8 @@ private fun ComposableRow(
     Row(
         modifier = Modifier
             .fillMaxWidth()
+            // Tap or long-press opens the drill-down (#16/#18)
+            .combinedClickable(onClick = onInspect, onLongClick = onInspect)
             .padding(horizontal = 10.dp, vertical = 3.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {

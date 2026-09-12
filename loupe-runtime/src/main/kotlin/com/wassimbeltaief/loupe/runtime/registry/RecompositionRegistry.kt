@@ -124,7 +124,7 @@ class RecompositionRegistry(
             }
         }
         val total = counts.values.sum().toFloat().coerceAtLeast(1f)
-        return counts.entries
+        val blamed = counts.entries
             .sortedByDescending { it.value }
             .map { (name, count) ->
                 val verdict = verdicts[name] ?: ParamVerdict.Changed
@@ -136,5 +136,10 @@ class RecompositionRegistry(
                     suggestion = SuggestionEngine.forBlame(name, verdict, count, count / total),
                 )
             }
+        // Spec: the blame bar also shows params that never contributed ("title · 0x stable")
+        val stable = records.first().params
+            .filter { it.name !in counts && it.verdict != ParamVerdict.FirstComposition }
+            .map { BlamedParam(it.name, 0, 0f, ParamVerdict.Unchanged) }
+        return blamed + stable
     }
 }
