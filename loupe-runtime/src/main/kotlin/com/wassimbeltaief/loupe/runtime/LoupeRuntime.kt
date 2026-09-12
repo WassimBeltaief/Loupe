@@ -1,13 +1,19 @@
 package com.wassimbeltaief.loupe.runtime
 
 import android.app.Application
+import android.util.Log
 import androidx.lifecycle.DefaultLifecycleObserver
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.ProcessLifecycleOwner
 import com.wassimbeltaief.loupe.runtime.model.RecompositionHistory
 import com.wassimbeltaief.loupe.runtime.overlay.LoupeOverlayManager
 import com.wassimbeltaief.loupe.runtime.registry.RecompositionRegistry
+import com.wassimbeltaief.loupe.runtime.reporting.LogcatFormatter
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.launch
 
 object LoupeRuntime {
 
@@ -23,10 +29,16 @@ object LoupeRuntime {
 
     private var overlayManager: LoupeOverlayManager? = null
 
+    // #23: per-key severity at last Logcat summary — summary is emitted only when
+    // a composable crosses UP into warm/hot, so Logcat is never spammed per frame
+    private val logcatSeverity = mutableMapOf<String, Int>()
+    private val logcatScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+
     val state: StateFlow<Map<String, RecompositionHistory>> get() = registry.state
 
     fun install(application: Application, config: LoupeConfig = LoupeConfig()) {
         configure(config)
+        startLogcatReporter()
         if (config.overlayEnabled) {
             val manager = LoupeOverlayManager(application)
             overlayManager = manager
@@ -47,7 +59,11 @@ object LoupeRuntime {
     fun record(key: String, file: String, line: Int, params: Array<Pair<String, Any?>>) {
         if (paused || !config.recordingEnabled) return
         if (config.ignoreList.any { pattern -> key.matchesGlob(pattern) }) return
-        registry.record(key, file, line, params)
+        val record = registry.record(key, file, line, params)
+        // #23 verbose mode: every individual recomposition with param changes
+        if (config.logcatEnabled && config.logcatVerbose) {
+            Log.d(LogcatFormatter.TAG, LogcatFormatter.verboseLine(record))
+        }
     }
 
     // Called exclusively by compiler-injected code, from the finally block
@@ -77,6 +93,7 @@ object LoupeRuntime {
     fun reset() {
         registry.reset()
         paused = false
+        synchronized(logcatSeverity) { logcatSeverity.clear() }
     }
 
     fun snapshot(): LoupeReport {
@@ -108,6 +125,29 @@ object LoupeRuntime {
             hotComposables = hot,
             warmComposables = warm,
         )
+    }
+
+    // #23: emits the summary block when a composable crosses up into warm/hot
+    private fun startLogcatReporter() {
+        if (!config.logcatEnabled) return
+        logcatScope.launch {
+            registry.state.collect { composables ->
+                for (history in composables.values) {
+                    val severity = when {
+                        history.windowRecompositions >= config.hotThreshold -> 2
+                        history.windowRecompositions >= config.warmThreshold -> 1
+                        else -> 0
+                    }
+                    val previous = logcatSeverity[history.key] ?: 0
+                    if (severity > previous) {
+                        LogcatFormatter.summaryLines(
+                            history, config.windowSeconds, config.hotThreshold, config.warmThreshold
+                        ).forEach { Log.d(LogcatFormatter.TAG, it) }
+                    }
+                    logcatSeverity[history.key] = severity
+                }
+            }
+        }
     }
 
     private fun String.matchesGlob(pattern: String): Boolean {

@@ -2,6 +2,42 @@ plugins {
     alias(libs.plugins.android.lib)
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
+    alias(libs.plugins.vanniktech.maven.publish)
+}
+
+mavenPublishing {
+    coordinates("com.wassimbeltaief", "loupe-runtime", "1.0.0-alpha01")
+    pom {
+        name.set("Loupe Runtime")
+        description.set("Zero-instrumentation recomposition debugger for Jetpack Compose")
+        inceptionYear.set("2026")
+        url.set("https://github.com/WassimBeltaief/loupe")
+        licenses {
+            license {
+                name.set("The Apache License, Version 2.0")
+                url.set("https://www.apache.org/licenses/LICENSE-2.0.txt")
+            }
+        }
+        developers {
+            developer {
+                id.set("WassimBeltaief")
+                name.set("Wassim Beltaief")
+            }
+        }
+        scm {
+            url.set("https://github.com/WassimBeltaief/loupe")
+            connection.set("scm:git:git://github.com/WassimBeltaief/loupe.git")
+            developerConnection.set("scm:git:ssh://git@github.com/WassimBeltaief/loupe.git")
+        }
+    }
+    publishToMavenCentral(com.vanniktech.maven.publish.SonatypeHost.CENTRAL_PORTAL)
+    // Sign only when release keys are configured (gradle.properties signing.keyId
+    // or SIGNING_KEY env) — publishToMavenLocal works without them
+    if (providers.gradleProperty("signing.keyId").isPresent ||
+        providers.environmentVariable("SIGNING_KEY").isPresent
+    ) {
+        signAllPublications()
+    }
 }
 
 android {

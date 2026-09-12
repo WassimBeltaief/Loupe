@@ -33,9 +33,9 @@ class RecompositionRegistry(
     private val _state = MutableStateFlow<Map<String, RecompositionHistory>>(emptyMap())
     val state: StateFlow<Map<String, RecompositionHistory>> = _state.asStateFlow()
 
-    fun record(key: String, file: String, line: Int, params: Array<Pair<String, Any?>>) {
+    fun record(key: String, file: String, line: Int, params: Array<Pair<String, Any?>>): RecompositionRecord {
         val entry = entries.getOrPut(key) { Entry() }
-        synchronized(entry) {
+        val created: RecompositionRecord = synchronized(entry) {
             entry.file = file
             entry.line = line
 
@@ -61,8 +61,10 @@ class RecompositionRegistry(
             while (entry.records.size > maxHistoryEntries) {
                 entry.records.removeLast()
             }
+            record
         }
         _state.value = snapshot()
+        return created
     }
 
     /**
