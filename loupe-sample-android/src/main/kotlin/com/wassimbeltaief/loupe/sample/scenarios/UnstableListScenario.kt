@@ -22,7 +22,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import com.wassimbeltaief.loupe.runtime.LoupeRuntime
 
 @Composable
 fun UnstableListScenario(onBack: () -> Unit) {
@@ -100,16 +99,6 @@ fun UnstableListScenario(onBack: () -> Unit) {
 
 @Composable
 private fun ProductCard(price: Double, title: String, items: MutableList<String>) {
-    LoupeRuntime.record(
-        key = "ProductCard",
-        file = "UnstableListScenario.kt",
-        line = 84,
-        params = arrayOf(
-            "price" to price,
-            "title" to title,
-            "items" to items,
-        ),
-    )
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
         Text(
             text = title,
