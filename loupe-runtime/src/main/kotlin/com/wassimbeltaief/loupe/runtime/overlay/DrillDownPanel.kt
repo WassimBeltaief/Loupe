@@ -284,8 +284,20 @@ private fun BurstRow(
                     fontFamily = FontFamily.Monospace,
                 )
             }
+            // #25: forced recompositions (body ran with all params unchanged) are
+            // a distinct class of problem — disambiguate from param-driven churn
+            if (burst.records.isNotEmpty() && burst.records.all { it.wasForced }) {
+                Spacer(Modifier.width(6.dp))
+                Chip("forced", LoupeColors.Warm)
+            }
         }
         if (expanded) {
+            if (burst.records.any { it.wasForced }) {
+                SuggestionRow(
+                    "recomposed despite no parameter changes. " +
+                        "Its parent may be non-restartable or calling invalidate() directly."
+                )
+            }
             burst.records.forEach { record ->
                 record.params.forEach { param ->
                     ParamRow(param)
