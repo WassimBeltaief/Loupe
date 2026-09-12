@@ -32,9 +32,14 @@ object ParamDiffer {
         }
     }
 
-    // A throwing toString() on a host-app object must never crash the app (#38)
-    private fun Any?.truncated(): String =
-        runCatching { toString() }.getOrDefault("<toString error>").take(MAX_VALUE_LENGTH)
+    // A throwing toString() on a host-app object must never crash the app (#38).
+    // String values pass PII detection first — emails and card-like numbers
+    // never reach the registry (#20).
+    private fun Any?.truncated(): String {
+        val raw = runCatching { toString() }.getOrDefault("<toString error>")
+        val redacted = if (this is String) PiiRedactor.redact(raw) else raw
+        return redacted.take(MAX_VALUE_LENGTH)
+    }
 
     // A throwing equals() is treated as "changed" — conservative, never crashes (#38)
     private fun safeEquals(a: Any?, b: Any?): Boolean =
