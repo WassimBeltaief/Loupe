@@ -188,9 +188,11 @@ private fun ComposableRow(
         )
         Spacer(Modifier.width(6.dp))
 
-        // Name
+        // Name — show the composable's short name only. Keys are qualified as
+        // File.Function (#37); in the narrow panel the file prefix truncates both
+        // rows to read identically. The drill-down still shows the full key.
         Text(
-            text = history.key,
+            text = history.key.substringAfterLast('.'),
             color = ColorOnSurface,
             fontSize = 11.sp,
             fontFamily = FontFamily.Monospace,
