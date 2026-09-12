@@ -1,7 +1,11 @@
 plugins {
     alias(libs.plugins.kotlin.jvm)
     `java-gradle-plugin`
+    alias(libs.plugins.gradle.plugin.publish)
 }
+
+group = "com.wassimbeltaief"
+version = "1.0.0-alpha01"
 
 dependencies {
     // Stable KGP API surface only — never kotlin-gradle-plugin internals
@@ -14,12 +18,16 @@ dependencies {
 }
 
 gradlePlugin {
+    // Gradle Plugin Portal metadata
+    website.set("https://github.com/WassimBeltaief/loupe")
+    vcsUrl.set("https://github.com/WassimBeltaief/loupe.git")
     plugins {
         create("loupe") {
             id = "com.wassimbeltaief.loupe"
             implementationClass = "com.wassimbeltaief.loupe.gradle.LoupeGradlePlugin"
             displayName = "Loupe"
             description = "Zero-instrumentation recomposition debugger for Jetpack Compose — debug builds only"
+            tags.set(listOf("compose", "jetpack-compose", "recomposition", "performance", "debug"))
         }
     }
 }
