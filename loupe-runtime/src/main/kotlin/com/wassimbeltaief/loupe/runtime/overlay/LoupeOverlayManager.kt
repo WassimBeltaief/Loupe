@@ -154,6 +154,16 @@ internal class LoupeOverlayManager(private val application: Application) {
         windowManager.updateViewLayout(view, params)
     }
 
+    /**
+     * Screen position of the heatmap window's content view. Used to convert the
+     * app-relative tooling boxes into overlay-relative coordinates (both windows
+     * can differ in how system bars inset them).
+     */
+    fun heatmapScreenLocation(): IntArray? {
+        val view = heatmapView ?: return null
+        return IntArray(2).also { view.getLocationOnScreen(it) }
+    }
+
     fun dismiss() {
         heatmapView?.let { windowManager.removeView(it) }
         heatmapView = null

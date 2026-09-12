@@ -12,7 +12,9 @@ internal data class HeatmapBox(
     val key: String,
     val name: String,
     val rect: IntRect,
+    /** Total recompositions (monotonic) — shown in the badge. */
     val count: Int,
+    /** Current activity band, drives the border colour. */
     val severity: HeatmapSeverity,
 )
 

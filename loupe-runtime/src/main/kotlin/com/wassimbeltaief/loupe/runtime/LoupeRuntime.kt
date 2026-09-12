@@ -126,15 +126,27 @@ object LoupeRuntime {
     }
 
     /**
-     * Main-thread sampling tick. Tooling boxes are window-relative; translate them
-     * by the compose root view's screen position so they align with the overlay.
+     * Main-thread sampling tick. Tooling boxes are relative to the app's compose
+     * view; translate by the DELTA between that view's screen position and the
+     * heatmap window's screen position. Using the delta (not the app position
+     * alone) avoids double-counting system-bar insets, which both windows apply
+     * independently — the bug that made borders drift down by the status bar.
      */
     internal fun sampleHeatmap() {
         val view = heatmapContentView ?: return
         val controller = heatmapController ?: return
-        val location = IntArray(2)
-        view.getLocationOnScreen(location)
-        controller.sample(IntOffset(location[0], location[1]))
+        val contentLocation = IntArray(2)
+        view.getLocationOnScreen(contentLocation)
+        val overlayLocation = overlayManager?.heatmapScreenLocation()
+        val origin = if (overlayLocation != null) {
+            IntOffset(
+                contentLocation[0] - overlayLocation[0],
+                contentLocation[1] - overlayLocation[1],
+            )
+        } else {
+            IntOffset(contentLocation[0], contentLocation[1])
+        }
+        controller.sample(origin)
     }
 
     fun snapshot(): LoupeReport {

@@ -66,6 +66,7 @@ internal class HeatmapController(
 
         val boxes = raw.mapNotNull { found ->
             val history = resolve(snapshot, found) ?: return@mapNotNull null
+            if (history.totalRecompositions == 0) return@mapNotNull null
             HeatmapBox(
                 key = history.key,
                 name = found.name,
@@ -75,7 +76,11 @@ internal class HeatmapController(
                     right = found.rect.right + origin.x,
                     bottom = found.rect.bottom + origin.y,
                 ),
-                count = history.windowRecompositions,
+                // Badge shows the TOTAL (monotonic) — a window count would visibly
+                // decay to 0 and read as if the composable stopped being tracked.
+                count = history.totalRecompositions,
+                // Colour still reflects activity in the rolling window, so the
+                // border cools from red → amber → green as churn stops.
                 severity = HeatmapMatcher.severityFor(
                     history.windowRecompositions,
                     config.hotThreshold,
