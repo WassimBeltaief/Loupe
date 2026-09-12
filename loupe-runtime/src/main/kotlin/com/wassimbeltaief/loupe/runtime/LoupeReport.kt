@@ -21,7 +21,7 @@ data class LoupeReport(
     fun assertMaxRecompositionCost(maxMs: Float) {
         val violations = composables.values.filter { it.totalDurationMs > maxMs }
         if (violations.isNotEmpty()) {
-            val detail = violations.joinToString("\n") { "  ${it.key}: ${"%.1f".format(it.totalDurationMs)}ms (threshold: ${maxMs}ms)" }
+            val detail = violations.joinToString("\n") { "  ${it.key}: ${"%.1f".format(java.util.Locale.US, it.totalDurationMs)}ms (threshold: ${maxMs}ms)" }
             throw AssertionError("assertMaxRecompositionCost(${maxMs}ms) failed\n$detail")
         }
     }

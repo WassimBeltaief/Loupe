@@ -225,7 +225,7 @@ private fun ComposableRow(
         )
         Spacer(Modifier.width(4.dp))
         Text(
-            text = "${"%.1f".format(history.totalDurationMs)}ms",
+            text = "${"%.1f".format(java.util.Locale.US, history.totalDurationMs)}ms",
             color = ColorOnSurface.copy(alpha = 0.5f),
             fontSize = 10.sp,
         )
