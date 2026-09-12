@@ -3,11 +3,12 @@ package com.wassimbeltaief.loupe.runtime.overlay
 import android.app.Application
 import android.content.Context
 import android.graphics.PixelFormat
-import android.os.Build
 import android.provider.Settings
 import android.util.Log
 import android.view.Gravity
 import android.view.WindowManager
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.platform.ComposeView
 import androidx.lifecycle.setViewTreeLifecycleOwner
 import androidx.lifecycle.setViewTreeViewModelStoreOwner
@@ -23,20 +24,30 @@ internal class LoupeOverlayManager(private val application: Application) {
         application.getSystemService(Context.WINDOW_SERVICE) as WindowManager
 
     private var overlayView: ComposeView? = null
+    private var heatmapView: ComposeView? = null
     private var lifecycleOwner: OverlayLifecycleOwner? = null
     private var collapsedGravity: Int = Gravity.BOTTOM or Gravity.START
     private var drillDownOpen = false
+
+    private fun hasOverlayPermission(): Boolean {
+        if (Settings.canDrawOverlays(application)) return true
+        Log.w("Loupe", "SYSTEM_ALERT_WINDOW permission not granted — overlay disabled. " +
+            "Grant it via: adb shell appops set ${application.packageName} SYSTEM_ALERT_WINDOW allow")
+        return false
+    }
+
+    private fun ensureLifecycleOwner(): OverlayLifecycleOwner =
+        lifecycleOwner ?: OverlayLifecycleOwner().also {
+            it.start()
+            lifecycleOwner = it
+        }
 
     fun show(
         stateFlow: StateFlow<Map<String, RecompositionHistory>>,
         config: LoupeConfig,
     ) {
         if (overlayView != null) return
-        if (!Settings.canDrawOverlays(application)) {
-            Log.w("Loupe", "SYSTEM_ALERT_WINDOW permission not granted — overlay disabled. " +
-                "Grant it via: adb shell appops set ${application.packageName} SYSTEM_ALERT_WINDOW allow")
-            return
-        }
+        if (!hasOverlayPermission()) return
 
         collapsedGravity = when (config.overlayPosition) {
             OverlayPosition.TopStart -> Gravity.TOP or Gravity.START
@@ -45,10 +56,7 @@ internal class LoupeOverlayManager(private val application: Application) {
             OverlayPosition.BottomEnd -> Gravity.BOTTOM or Gravity.END
         }
 
-        val owner = OverlayLifecycleOwner().also {
-            it.start()
-            lifecycleOwner = it
-        }
+        val owner = ensureLifecycleOwner()
 
         val view = ComposeView(application).apply {
             setViewTreeLifecycleOwner(owner)
@@ -81,6 +89,44 @@ internal class LoupeOverlayManager(private val application: Application) {
     }
 
     /**
+     * #13: full-screen, non-touchable window that draws heatmap borders + badges.
+     * Separate from [overlayView] because one Android window cannot be
+     * simultaneously touch-through in some regions and interactive in others.
+     * Added after the panel, so the panel stays on top.
+     */
+    fun showHeatmap(controller: HeatmapController) {
+        if (heatmapView != null) return
+        if (!hasOverlayPermission()) return
+
+        val owner = ensureLifecycleOwner()
+        val view = ComposeView(application).apply {
+            setViewTreeLifecycleOwner(owner)
+            setViewTreeViewModelStoreOwner(owner)
+            setViewTreeSavedStateRegistryOwner(owner)
+            setContent {
+                val boxes by controller.boxes.collectAsState()
+                HeatmapLayer(boxes = boxes)
+            }
+        }
+
+        val params = WindowManager.LayoutParams(
+            WindowManager.LayoutParams.MATCH_PARENT,
+            WindowManager.LayoutParams.MATCH_PARENT,
+            WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+                WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
+                WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE or
+                WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
+            PixelFormat.TRANSLUCENT,
+        ).apply {
+            gravity = Gravity.TOP or Gravity.START
+        }
+
+        windowManager.addView(view, params)
+        heatmapView = view
+    }
+
+    /**
      * #18: switches the overlay window between the collapsed corner card and the
      * full-width bottom sheet (drill-down). Touches outside the sheet still pass
      * through to the app (FLAG_NOT_TOUCH_MODAL) — the sheet never closes on
@@ -108,6 +154,8 @@ internal class LoupeOverlayManager(private val application: Application) {
     }
 
     fun dismiss() {
+        heatmapView?.let { windowManager.removeView(it) }
+        heatmapView = null
         overlayView?.let { windowManager.removeView(it) }
         overlayView = null
         lifecycleOwner?.stop()

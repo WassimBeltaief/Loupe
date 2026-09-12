@@ -2,10 +2,14 @@ package com.wassimbeltaief.loupe.runtime
 
 import android.app.Application
 import android.util.Log
+import android.view.View
+import androidx.compose.runtime.tooling.CompositionData
+import androidx.compose.ui.unit.IntOffset
 import androidx.lifecycle.DefaultLifecycleObserver
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.ProcessLifecycleOwner
 import com.wassimbeltaief.loupe.runtime.model.RecompositionHistory
+import com.wassimbeltaief.loupe.runtime.overlay.HeatmapController
 import com.wassimbeltaief.loupe.runtime.overlay.LoupeOverlayManager
 import com.wassimbeltaief.loupe.runtime.registry.RecompositionRegistry
 import com.wassimbeltaief.loupe.runtime.reporting.LogcatFormatter
@@ -29,6 +33,10 @@ object LoupeRuntime {
 
     private var overlayManager: LoupeOverlayManager? = null
 
+    // #13 heatmap state
+    private var heatmapController: HeatmapController? = null
+    @Volatile private var heatmapContentView: View? = null
+
     // #23: per-key severity at last Logcat summary — summary is emitted only when
     // a composable crosses UP into warm/hot, so Logcat is never spammed per frame
     private val logcatSeverity = mutableMapOf<String, Int>()
@@ -39,15 +47,22 @@ object LoupeRuntime {
     fun install(application: Application, config: LoupeConfig = LoupeConfig()) {
         configure(config)
         startLogcatReporter()
-        if (config.overlayEnabled) {
+        if (config.overlayEnabled || config.heatmapEnabled) {
             val manager = LoupeOverlayManager(application)
             overlayManager = manager
             ProcessLifecycleOwner.get().lifecycle.addObserver(object : DefaultLifecycleObserver {
                 override fun onStart(owner: LifecycleOwner) {
-                    if (!overlayDismissed) {
-                        manager.show(stateFlow = registry.state, config = this@LoupeRuntime.config)
+                    if (overlayDismissed) return
+                    val current = this@LoupeRuntime.config
+                    // Heatmap window first so the interactive panel stays on top
+                    if (current.heatmapEnabled) {
+                        heatmapController?.let { manager.showHeatmap(it) }
+                    }
+                    if (current.overlayEnabled) {
+                        manager.show(stateFlow = registry.state, config = current)
                     }
                 }
+
                 override fun onStop(owner: LifecycleOwner) {
                     manager.dismiss()
                 }
@@ -79,6 +94,7 @@ object LoupeRuntime {
             maxHistoryEntries = config.maxHistoryEntries,
             windowNs = config.windowSeconds * 1_000_000_000L,
         )
+        heatmapController = HeatmapController(config) { registry.snapshot() }
     }
 
     fun pause() { paused = true }
@@ -94,6 +110,30 @@ object LoupeRuntime {
         registry.reset()
         paused = false
         synchronized(logcatSeverity) { logcatSeverity.clear() }
+    }
+
+    // ── #13 heatmap host API — driven by LoupeHeatmapHost on the main thread ──
+
+    internal fun attachInspectionTables(tables: MutableSet<CompositionData>, contentView: View) {
+        heatmapContentView = contentView
+        heatmapController?.attach(tables)
+    }
+
+    internal fun detachInspectionTables() {
+        heatmapController?.detach()
+        heatmapContentView = null
+    }
+
+    /**
+     * Main-thread sampling tick. Tooling boxes are window-relative; translate them
+     * by the compose root view's screen position so they align with the overlay.
+     */
+    internal fun sampleHeatmap() {
+        val view = heatmapContentView ?: return
+        val controller = heatmapController ?: return
+        val location = IntArray(2)
+        view.getLocationOnScreen(location)
+        controller.sample(IntOffset(location[0], location[1]))
     }
 
     fun snapshot(): LoupeReport {

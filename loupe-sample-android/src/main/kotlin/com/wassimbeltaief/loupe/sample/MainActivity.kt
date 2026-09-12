@@ -12,6 +12,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import com.wassimbeltaief.loupe.runtime.LoupeHeatmapHost
 import com.wassimbeltaief.loupe.runtime.LoupeRuntime
 import com.wassimbeltaief.loupe.sample.scenarios.LambdaIdentityScenario
 import com.wassimbeltaief.loupe.sample.scenarios.ScenarioListScreen
@@ -23,18 +24,22 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContent {
-            MaterialTheme {
-                Surface(modifier = Modifier.fillMaxSize().safeDrawingPadding()) {
-                    var current by remember { mutableStateOf<String?>(null) }
-                    when (current) {
-                        "unstable_list"    -> UnstableListScenario(onBack = { current = null })
-                        "lambda_identity"  -> LambdaIdentityScenario(onBack = { current = null })
-                        "stable"           -> StableScenario(onBack = { current = null })
-                        "wizard"           -> WizardScenario(onBack = { current = null })
-                        else               -> ScenarioListScreen(onSelect = {
-                            LoupeRuntime.reset()
-                            current = it
-                        })
+            // Opt-in heatmap host (#13) — draws borders + count badges over tracked
+            // composables. This is the one feature that needs a code change.
+            LoupeHeatmapHost {
+                MaterialTheme {
+                    Surface(modifier = Modifier.fillMaxSize().safeDrawingPadding()) {
+                        var current by remember { mutableStateOf<String?>(null) }
+                        when (current) {
+                            "unstable_list"    -> UnstableListScenario(onBack = { current = null })
+                            "lambda_identity"  -> LambdaIdentityScenario(onBack = { current = null })
+                            "stable"           -> StableScenario(onBack = { current = null })
+                            "wizard"           -> WizardScenario(onBack = { current = null })
+                            else               -> ScenarioListScreen(onSelect = {
+                                LoupeRuntime.reset()
+                                current = it
+                            })
+                        }
                     }
                 }
             }
