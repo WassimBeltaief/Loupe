@@ -1,6 +1,7 @@
 package com.wassimbeltaief.loupe.runtime.registry
 
 import com.wassimbeltaief.loupe.runtime.analysis.ParamDiffer
+import com.wassimbeltaief.loupe.runtime.analysis.SuggestionEngine
 import com.wassimbeltaief.loupe.runtime.model.BlamedParam
 import com.wassimbeltaief.loupe.runtime.model.ParamVerdict
 import com.wassimbeltaief.loupe.runtime.model.RecompositionHistory
@@ -15,6 +16,11 @@ class RecompositionRegistry(
     private val windowNs: Long = 5_000_000_000L,
     private val timeSource: () -> Long = System::nanoTime,
 ) {
+    companion object {
+        /** Sentinel for "recordEnd not yet received" — never a valid measured duration. */
+        const val DURATION_UNSET = -1L
+    }
+
     private data class Entry(
         val records: ArrayDeque<RecompositionRecord> = ArrayDeque(),
         val previousParams: MutableMap<String, Any?> = mutableMapOf(),
@@ -47,13 +53,31 @@ class RecompositionRegistry(
                 line = line,
                 timestampNs = timeSource(),
                 params = snapshots,
-                durationNs = 0L,
+                durationNs = DURATION_UNSET,
                 wasForced = wasForced,
             )
 
             entry.records.addFirst(record)
             while (entry.records.size > maxHistoryEntries) {
                 entry.records.removeLast()
+            }
+        }
+        _state.value = snapshot()
+    }
+
+    /**
+     * Called from the compiler-injected finally block wrapping the composable body.
+     * Sets [RecompositionRecord.durationNs] on the newest record still lacking one —
+     * LIFO pairing keeps recursive composables correct. No-op if no record matches
+     * (e.g. reset() or configure() happened mid-composition).
+     */
+    fun recordEnd(key: String, endNs: Long = timeSource()) {
+        val entry = entries[key] ?: return
+        synchronized(entry) {
+            val index = entry.records.indexOfFirst { it.durationNs == DURATION_UNSET }
+            if (index >= 0) {
+                val r = entry.records[index]
+                entry.records[index] = r.copy(durationNs = (endNs - r.timestampNs).coerceAtLeast(0))
             }
         }
         _state.value = snapshot()
@@ -69,7 +93,11 @@ class RecompositionRegistry(
             synchronized(entry) {
                 val now = timeSource()
                 val windowRecompositions = entry.records.count { now - it.timestampNs <= windowNs }
-                val totalDurationMs = entry.records.sumOf { it.durationNs }.toFloat() / 1_000_000f
+                // Records still awaiting recordEnd (durationNs == DURATION_UNSET) don't count
+                val totalDurationMs = entry.records
+                    .filter { it.durationNs >= 0 }
+                    .sumOf { it.durationNs }
+                    .toFloat() / 1_000_000f
                 RecompositionHistory(
                     key = key,
                     file = entry.file,
@@ -99,11 +127,13 @@ class RecompositionRegistry(
         return counts.entries
             .sortedByDescending { it.value }
             .map { (name, count) ->
+                val verdict = verdicts[name] ?: ParamVerdict.Changed
                 BlamedParam(
                     name = name,
                     recompositionCount = count,
                     fraction = count / total,
-                    dominantVerdict = verdicts[name] ?: ParamVerdict.Changed,
+                    dominantVerdict = verdict,
+                    suggestion = SuggestionEngine.forBlame(name, verdict, count, count / total),
                 )
             }
     }
