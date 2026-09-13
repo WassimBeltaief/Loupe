@@ -3,7 +3,7 @@ package com.wassimbeltaief.loupe.runtime.overlay
 import androidx.compose.ui.graphics.Color
 
 /**
- * Shared visual grammar (CLAUDE.md "Visual Design Language").
+ * Shared visual grammar for the overlay.
  *
  * Light, cream-white surfaces per the design mockups — opaque, no transparency.
  */
@@ -25,5 +25,4 @@ internal object LoupeColors {
     val OnSurfaceVariant = Color(0xFF6B6459)
     val Divider = Color(0xFFE7E0D3)
     val Outline = Color(0xFFD8CFC0)
-    val Scrim = Color(0x33000000)
 }

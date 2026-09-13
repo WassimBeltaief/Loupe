@@ -3,7 +3,7 @@ package com.wassimbeltaief.loupe.runtime.analysis
 import com.wassimbeltaief.loupe.runtime.model.ParamVerdict
 
 /**
- * Maps parameter verdicts to human-readable fix suggestions (CLAUDE.md rules table).
+ * Maps parameter verdicts to human-readable fix suggestions.
  * Rules are checked in order; first match wins.
  *
  * Not implemented here: the "non-data class" rule — reliably detecting data classes
@@ -59,9 +59,9 @@ object SuggestionEngine {
 
     /**
      * History-level rules, attached to [BlamedParam.suggestion].
-     * Lambda wording deliberately acknowledges ambiguity (CLAUDE.md "Lambda
-     * Identity Ambiguity" section) — a lambda that captures changing state is
-     * supposed to change identity, so we never assert it's definitely a bug.
+     * Lambda wording deliberately acknowledges ambiguity — a lambda that captures
+     * changing state is supposed to change identity, so we never assert it's
+     * definitely a bug.
      */
     fun forBlame(
         name: String,

@@ -15,7 +15,6 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         setContent {
-            // Opt-in heatmap host (#13) — the one feature that needs a code change.
             LoupeHeatmapHost {
                 LoupeSampleTheme {
                     Surface(

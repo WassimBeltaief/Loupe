@@ -510,7 +510,7 @@ private fun ordinalColor(ordinal: Int, config: LoupeConfig): Color = when {
 
 /**
  * Verdict colour grammar — one source of truth so a changed value is always the
- * same colour, whether it is a parameter or local state (CLAUDE.md visual design).
+ * same colour, whether it is a parameter or local state.
  */
 private fun verdictColor(verdict: ParamVerdict): Color = when (verdict) {
     is ParamVerdict.LambdaIdentity -> LoupeColors.VerdictLambda

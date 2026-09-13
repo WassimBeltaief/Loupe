@@ -6,7 +6,7 @@ import com.wassimbeltaief.loupe.runtime.model.RecompositionRecord
 /**
  * Groups a composable's recomposition records (newest-first) into "bursts":
  * sequences of recompositions within [DEFAULT_BURST_GAP_NS] of each other.
- * Bursts are the collapsed unit of the drill-down timeline (CLAUDE.md spec).
+ * Bursts are the collapsed unit of the drill-down timeline.
  */
 object BurstGrouper {
 
