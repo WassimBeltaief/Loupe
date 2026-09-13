@@ -49,6 +49,6 @@ Heatmap borders are the only opt-in part — wrap your content once:
 LoupeHeatmapHost { App() }
 ```
 
-## Documentation
+## Feedback
 
-Architecture, configuration and the CI testing API live in [CLAUDE.md](CLAUDE.md). Bugs and ideas: [open an issue](https://github.com/WassimBeltaief/Loupe/issues).
+Bugs, questions and ideas: [open an issue](https://github.com/WassimBeltaief/Loupe/issues).

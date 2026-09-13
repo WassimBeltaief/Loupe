@@ -12,7 +12,7 @@ import org.jetbrains.kotlin.gradle.plugin.SubpluginOption
 /**
  * Wires the Loupe compiler plugin into debuggable compilations only.
  *
- * Hard constraint (CLAUDE.md): never activate on release/staging or any
+ * Hard constraint: never activate on release/staging or any
  * non-debuggable variant. We enforce this by inspecting the compilation name,
  * which for Android modules is the variant/build-type name ("debug", "release",
  * "freeDebug", …). Test compilations (unit/androidTest) are also skipped — the

@@ -3,7 +3,7 @@ package com.wassimbeltaief.loupe.runtime.overlay
 import androidx.compose.ui.graphics.Color
 
 /**
- * Shared visual grammar (CLAUDE.md "Visual Design Language").
+ * Shared visual grammar for the overlay.
  *
  * Light, cream-white surfaces per the design mockups — opaque, no transparency.
  */
