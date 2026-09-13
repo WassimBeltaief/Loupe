@@ -15,12 +15,15 @@ import org.jetbrains.kotlin.ir.builders.irGet
 import org.jetbrains.kotlin.ir.builders.irGetObjectValue
 import org.jetbrains.kotlin.ir.builders.irImplicitCast
 import org.jetbrains.kotlin.ir.builders.irVararg
+import org.jetbrains.kotlin.ir.declarations.IrDeclarationOrigin
 import org.jetbrains.kotlin.ir.declarations.IrSimpleFunction
 import org.jetbrains.kotlin.ir.declarations.IrValueParameter
 import org.jetbrains.kotlin.ir.declarations.IrVariable
 import org.jetbrains.kotlin.ir.declarations.IrAnnotationContainer
 import org.jetbrains.kotlin.ir.declarations.IrClass
 import org.jetbrains.kotlin.ir.declarations.IrLocalDelegatedProperty
+import org.jetbrains.kotlin.ir.declarations.impl.IrVariableImpl
+import org.jetbrains.kotlin.ir.symbols.impl.IrVariableSymbolImpl
 import org.jetbrains.kotlin.ir.expressions.IrBlock
 import org.jetbrains.kotlin.ir.expressions.IrBlockBody
 import org.jetbrains.kotlin.ir.expressions.IrCall
@@ -56,6 +59,7 @@ private val LOUPE_RUNTIME_CLASS_ID = ClassId.topLevel(FqName("com.wassimbeltaief
 private val PAIR_CLASS_ID = ClassId(FqName("kotlin"), Name.identifier("Pair"))
 private val SYSTEM_CLASS_ID = ClassId.fromString("java/lang/System")
 private val LAMBDA_REF_CLASS_ID = ClassId(FqName("com.wassimbeltaief.loupe.runtime.model"), Name.identifier("LambdaRef"))
+private val MODIFIER_FQN = FqName("androidx.compose.ui.Modifier")
 
 /** Compose injects the Composer parameter under this name. */
 private const val COMPOSER_PARAM_NAME = "\$composer"
@@ -97,10 +101,10 @@ internal class LoupeIrTransformer(
         pluginContext.referenceFunctions(
             CallableId(LOUPE_RUNTIME_CLASS_ID, Name.identifier("record"))
         ).firstOrNull { fn ->
-            fn.owner.valueParameters.size == 5 &&
+            fn.owner.valueParameters.size == 6 &&
                 fn.owner.valueParameters[0].name.asString() == "key"
         }.also { fn ->
-            if (fn == null) warn("LoupeRuntime.record(key,file,line,params,instance) not found — no composables will be instrumented")
+            if (fn == null) warn("LoupeRuntime.record(key,file,line,params,instance,instanceTag) not found — no composables will be instrumented")
         }
     }
 
@@ -109,10 +113,10 @@ internal class LoupeIrTransformer(
         pluginContext.referenceFunctions(
             CallableId(LOUPE_RUNTIME_CLASS_ID, Name.identifier("recordEnd"))
         ).firstOrNull { fn ->
-            fn.owner.valueParameters.size == 2 &&
+            fn.owner.valueParameters.size == 3 &&
                 fn.owner.valueParameters[0].name.asString() == "key"
         }.also { fn ->
-            if (fn == null) warn("LoupeRuntime.recordEnd(key,instance) not found — duration measurement disabled")
+            if (fn == null) warn("LoupeRuntime.recordEnd(key,instance,instanceTag) not found — duration measurement disabled")
         }
     }
 
@@ -121,10 +125,20 @@ internal class LoupeIrTransformer(
         pluginContext.referenceFunctions(
             CallableId(LOUPE_RUNTIME_CLASS_ID, Name.identifier("trackState"))
         ).firstOrNull { fn ->
-            fn.owner.valueParameters.size == 4 &&
+            fn.owner.valueParameters.size == 5 &&
                 fn.owner.valueParameters[0].name.asString() == "key"
         }.also { fn ->
-            if (fn == null) warn("LoupeRuntime.trackState(key,instance,name,value) not found — local state tracking disabled")
+            if (fn == null) warn("LoupeRuntime.trackState(key,instance,name,value,instanceTag) not found — local state tracking disabled")
+        }
+    }
+
+    // Extracts the first testTag string from a Modifier chain at runtime.
+    private val extractTestTagFn by lazy {
+        pluginContext.referenceFunctions(
+            CallableId(LOUPE_RUNTIME_CLASS_ID, Name.identifier("extractTestTag"))
+        ).firstOrNull { fn ->
+            fn.owner.valueParameters.size == 1 &&
+                fn.owner.valueParameters[0].name.asString() == "modifier"
         }
     }
 
@@ -215,7 +229,11 @@ internal class LoupeIrTransformer(
         val body = declaration.body as? IrBlockBody ?: return declaration
         val name = declaration.name.asString()
 
-        val recordCall = buildRecordCall(declaration) ?: return declaration
+        val builder = DeclarationIrBuilder(pluginContext, declaration.symbol)
+        val modifierParam = findModifierParam(declaration)
+        val tagVar: IrVariable? = modifierParam?.let { buildTagVar(declaration, it, builder) }
+
+        val recordCall = buildRecordCall(declaration, tagVar) ?: return declaration
 
         // This transform runs AFTER the Compose compiler's IR lowering, so the
         // injected calls appear after startRestartGroup in the bytecode.
@@ -229,14 +247,14 @@ internal class LoupeIrTransformer(
 
         val originalStatements = container.toList()
         container.clear()
+        if (tagVar != null) container += tagVar
         container += recordCall
 
-        val builder = DeclarationIrBuilder(pluginContext, declaration.symbol)
         val file = File(declaration.file.fileEntry.name).name
         val instrumentedStatements =
-            injectStateTracking(originalStatements, declaration, recordKey(declaration, file), builder)
+            injectStateTracking(originalStatements, declaration, recordKey(declaration, file), builder, tagVar)
 
-        val recordEndCall = buildRecordEndCall(declaration)
+        val recordEndCall = buildRecordEndCall(declaration, tagVar)
         if (recordEndCall != null) {
             // Wrap the original body in try/finally, so the duration is recorded on
             // every exit path, including early returns and exceptions. The body is
@@ -302,7 +320,7 @@ internal class LoupeIrTransformer(
     // ── Record call builder ──────────────────────────────────────────────────
 
     /** Builds the `LoupeRuntime.record(...)` call for one composable. */
-    private fun buildRecordCall(declaration: IrSimpleFunction): IrExpression? {
+    private fun buildRecordCall(declaration: IrSimpleFunction, tagVar: IrVariable? = null): IrExpression? {
         val rc = runtimeClass ?: return null
         val fn = recordFn ?: return null
 
@@ -327,6 +345,7 @@ internal class LoupeIrTransformer(
             call.putValueArgument(2, irInt(line))
             call.putValueArgument(3, paramsArray)
             call.putValueArgument(4, buildInstanceArg(declaration, builder))
+            call.putValueArgument(5, if (tagVar != null) builder.irGet(tagVar) else irNull())
         }
     }
 
@@ -346,7 +365,7 @@ internal class LoupeIrTransformer(
     // ── recordEnd(key) call — injected into the finally block ────────────────
 
     /** Builds the `LoupeRuntime.recordEnd(...)` call that closes the duration measurement. */
-    private fun buildRecordEndCall(declaration: IrSimpleFunction): IrExpression? {
+    private fun buildRecordEndCall(declaration: IrSimpleFunction, tagVar: IrVariable? = null): IrExpression? {
         val rc = runtimeClass ?: return null
         val fn = recordEndFn ?: return null
         val file = File(declaration.file.fileEntry.name).name
@@ -355,6 +374,7 @@ internal class LoupeIrTransformer(
             call.dispatchReceiver = builder.irGetObjectValue(rc.owner.defaultType, rc)
             call.putValueArgument(0, irString(recordKey(declaration, file)))
             call.putValueArgument(1, buildInstanceArg(declaration, builder))
+            call.putValueArgument(2, if (tagVar != null) builder.irGet(tagVar) else irNull())
         }
     }
 
@@ -388,6 +408,7 @@ internal class LoupeIrTransformer(
         declaration: IrSimpleFunction,
         key: String,
         builder: DeclarationIrBuilder,
+        tagVar: IrVariable? = null,
     ): List<IrStatement> {
         if (trackStateFn == null || stateValueGetter == null) return statements
         val result = ArrayList<IrStatement>(statements.size * 2)
@@ -397,27 +418,28 @@ internal class LoupeIrTransformer(
                 is IrVariable -> {
                     if (!statement.type.isStateType()) continue
                     val name = statement.name.asString().removeSuffix("\$delegate")
-                    buildTrackStateCall(declaration, key, name, statement, builder)?.let { result += it }
+                    buildTrackStateCall(declaration, key, name, statement, builder, tagVar)?.let { result += it }
                 }
                 // `var counter by remember { mutableStateOf(0) }` lowers to a delegated
                 // local property whose backing `delegate` variable holds the MutableState.
                 is IrLocalDelegatedProperty -> {
                     val delegate = statement.delegate
                     if (!delegate.type.isStateType()) continue
-                    buildTrackStateCall(declaration, key, statement.name.asString(), delegate, builder)?.let { result += it }
+                    buildTrackStateCall(declaration, key, statement.name.asString(), delegate, builder, tagVar)?.let { result += it }
                 }
             }
         }
         return result
     }
 
-    /** Builds the `trackState(key, instance, name, value)` call for one state holder. */
+    /** Builds the `trackState(key, instance, name, value, instanceTag)` call for one state holder. */
     private fun buildTrackStateCall(
         declaration: IrSimpleFunction,
         key: String,
         name: String,
         holder: IrVariable,
         builder: DeclarationIrBuilder,
+        tagVar: IrVariable? = null,
     ): IrExpression? {
         val rc = runtimeClass ?: return null
         val fn = trackStateFn ?: return null
@@ -431,6 +453,7 @@ internal class LoupeIrTransformer(
             call.putValueArgument(1, buildInstanceArg(declaration, builder))
             call.putValueArgument(2, irString(name))
             call.putValueArgument(3, builder.irImplicitCast(value, anyNType))
+            call.putValueArgument(4, if (tagVar != null) builder.irGet(tagVar) else irNull())
         }
     }
 
@@ -543,6 +566,42 @@ internal class LoupeIrTransformer(
         }
     }
 
+    // ── Modifier / testTag helpers ───────────────────────────────────────────
+
+    private fun findModifierParam(declaration: IrSimpleFunction): IrValueParameter? =
+        declaration.valueParameters.firstOrNull { param ->
+            !param.name.asString().startsWith("$") &&
+                param.name.asString() == "modifier" &&
+                isModifierType(param.type)
+        }
+
+    private fun isModifierType(type: IrType): Boolean {
+        if (type !is IrSimpleType) return false
+        val cls = (type.classifier as? IrClassSymbol)?.owner ?: return false
+        return cls.fqNameWhenAvailable == MODIFIER_FQN
+    }
+
+    private fun buildTagVar(
+        declaration: IrSimpleFunction,
+        modifierParam: IrValueParameter,
+        builder: DeclarationIrBuilder,
+    ): IrVariable? {
+        val fn = extractTestTagFn ?: return null
+        val rc = runtimeClass ?: return null
+        val call = builder.irCall(fn).also { c ->
+            c.dispatchReceiver = builder.irGetObjectValue(rc.owner.defaultType, rc)
+            c.putValueArgument(0, builder.irGet(modifierParam))
+        }
+        return IrVariableImpl(
+            startOffset = UNDEFINED_OFFSET, endOffset = UNDEFINED_OFFSET,
+            origin = IrDeclarationOrigin.DEFINED,
+            symbol = IrVariableSymbolImpl(),
+            name = Name.identifier("_loupeTag"),
+            type = irBuiltIns.stringType.makeNullable(),
+            isVar = false, isConst = false, isLateinit = false,
+        ).also { it.parent = declaration; it.initializer = call }
+    }
+
     // ── IR constant helpers ──────────────────────────────────────────────────
 
     /** Builds a string constant in the IR. */
@@ -552,4 +611,8 @@ internal class LoupeIrTransformer(
     /** Builds an int constant in the IR. */
     private fun irInt(value: Int): IrExpression =
         IrConstImpl.int(UNDEFINED_OFFSET, UNDEFINED_OFFSET, irBuiltIns.intType, value)
+
+    /** Builds a null literal of type `Nothing?` for nullable String parameters. */
+    private fun irNull(): IrExpression =
+        IrConstImpl.constNull(UNDEFINED_OFFSET, UNDEFINED_OFFSET, irBuiltIns.nothingNType)
 }

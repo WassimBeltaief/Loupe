@@ -2,7 +2,7 @@ package com.wassimbeltaief.loupe.runtime.reporting
 
 import com.wassimbeltaief.loupe.runtime.model.BlamedParam
 import com.wassimbeltaief.loupe.runtime.model.ParamVerdict
-import com.wassimbeltaief.loupe.runtime.model.RecompositionHistory
+import com.wassimbeltaief.loupe.runtime.model.CompositionHistory
 import com.wassimbeltaief.loupe.runtime.model.RecompositionRecord
 
 /**
@@ -22,7 +22,7 @@ internal object LogcatFormatter {
      * becomes warm or hot, so Logcat is not flooded.
      */
     fun summaryLines(
-        history: RecompositionHistory,
+        history: CompositionHistory,
         windowSeconds: Int,
         hotThreshold: Int = 16,
         warmThreshold: Int = 4,

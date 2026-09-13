@@ -14,7 +14,7 @@ import androidx.lifecycle.setViewTreeLifecycleOwner
 import androidx.lifecycle.setViewTreeViewModelStoreOwner
 import androidx.savedstate.setViewTreeSavedStateRegistryOwner
 import com.wassimbeltaief.loupe.runtime.LoupeConfig
-import com.wassimbeltaief.loupe.runtime.model.RecompositionHistory
+import com.wassimbeltaief.loupe.runtime.model.CompositionHistory
 import kotlinx.coroutines.flow.StateFlow
 
 /**
@@ -53,7 +53,7 @@ internal class LoupeOverlayManager(private val application: Application) {
 
     /** Adds the interactive overlay panel, collapsed at the bottom. Does nothing if already shown. */
     fun show(
-        instancesFlow: StateFlow<List<RecompositionHistory>>,
+        instancesFlow: StateFlow<List<CompositionHistory>>,
         config: LoupeConfig,
     ) {
         if (overlayView != null) return

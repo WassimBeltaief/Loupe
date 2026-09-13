@@ -1,10 +1,10 @@
 package com.wassimbeltaief.loupe.runtime.export
 
 import com.wassimbeltaief.loupe.runtime.model.ParamSnapshot
-import com.wassimbeltaief.loupe.runtime.model.RecompositionHistory
+import com.wassimbeltaief.loupe.runtime.model.CompositionHistory
 
 /**
- * Writes a [RecompositionHistory] as JSON for the Share and Copy actions.
+ * Writes a [CompositionHistory] as JSON for the Share and Copy actions.
  *
  * The JSON is built by hand, so the runtime needs no serialization dependency.
  * Values are escaped properly, so a parameter that contains quotes or newlines
@@ -13,12 +13,12 @@ import com.wassimbeltaief.loupe.runtime.model.RecompositionHistory
 object JsonExporter {
 
     /** Returns the full history, records included, as one JSON object. */
-    fun historyToJson(history: RecompositionHistory): String = buildString {
+    fun historyToJson(history: CompositionHistory): String = buildString {
         append("{")
         field("key", history.key); comma()
         field("file", history.file); comma()
         field("line", history.line); comma()
-        field("totalRecompositions", history.totalRecompositions); comma()
+        field("totalCompositions", history.totalCompositions); comma()
         field("windowRecompositions", history.windowRecompositions); comma()
         field("totalDurationMs", history.totalDurationMs); comma()
         append("\"blamedParams\":[")

@@ -183,6 +183,29 @@ class LoupeIrTransformerTest {
     }
 
     @Test
+    fun `passes testTag extracted from modifier to record`() {
+        val source = SourceFile.kotlin(
+            "Tagged.kt", """
+            import androidx.compose.runtime.Composable
+            import androidx.compose.ui.Modifier
+            @Composable
+            fun TaggedCard(modifier: Modifier = Modifier) {}
+            """.trimIndent()
+        )
+
+        val (result, sink) = compileWithPlugin(source)
+        assertEquals(KotlinCompilation.ExitCode.OK, result.exitCode, result.messages)
+
+        val modifierClass = result.classLoader.loadClass("androidx.compose.ui.Modifier")
+        val modifier = modifierClass.getField("Companion").get(null)
+        result.callTopLevel("TaggedKt", "TaggedCard", modifierClass to modifier)
+
+        assertEquals(1, sink.size)
+        val tag = sink[0]["instanceTag"] as? String
+        assertTrue(tag != null && tag.startsWith("tag:"), "expected an extracted tag, got $tag")
+    }
+
+    @Test
     fun `skips @LoupeIgnore annotated composables`() {
         val source = SourceFile.kotlin(
             "Ignored.kt", """
@@ -452,7 +475,7 @@ class LoupeIrTransformerTest {
         packageFilter: List<String> = emptyList(),
     ): Pair<JvmCompilationResult, List<Map<String, Any?>>> {
         val result = KotlinCompilation().apply {
-            sources = listOf(composableStub, loupeRuntimeStub, lambdaRefStub) + extraStubs + listOf(source) + extraSources
+            sources = listOf(composableStub, modifierStub, loupeRuntimeStub, lambdaRefStub) + extraStubs + listOf(source) + extraSources
             compilerPluginRegistrars = listOf(testPlugin(packageFilter))
             inheritClassPath = true
         }.compile()

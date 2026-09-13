@@ -48,8 +48,10 @@ dependencies {
     // ui-test-manifest registers the host Activity createComposeRule needs
     debugImplementation(libs.compose.ui.test.manifest)
 
+    androidTestImplementation(project(":loupe-testing"))
     androidTestImplementation(platform(libs.compose.bom))
     androidTestImplementation(libs.compose.ui.test.junit4)
     androidTestImplementation(libs.androidx.test.junit)
     androidTestImplementation(libs.androidx.test.runner)
+    androidTestImplementation(libs.espresso.core)
 }

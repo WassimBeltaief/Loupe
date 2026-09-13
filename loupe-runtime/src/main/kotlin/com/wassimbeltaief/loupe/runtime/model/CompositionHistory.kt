@@ -7,7 +7,7 @@ package com.wassimbeltaief.loupe.runtime.model
  * The overlay shows one row per instance. The aggregate view (one row per
  * composable function) also uses this type, with [instanceId] equal to [key].
  */
-data class RecompositionHistory(
+data class CompositionHistory(
     val key: String,
     /** Unique id for one instance (`key#compoundKeyHash`). Equals [key] for aggregates. */
     val instanceId: String = key,
@@ -15,7 +15,7 @@ data class RecompositionHistory(
     val line: Int,
     /** Records for this instance, newest first, capped by the circular buffer. */
     val records: List<RecompositionRecord>,
-    val totalRecompositions: Int,
+    val totalCompositions: Int,
     /** Recompositions in the last `windowSeconds` seconds. */
     val windowRecompositions: Int,
     val totalDurationMs: Float,
