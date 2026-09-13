@@ -1,7 +1,7 @@
 package com.wassimbeltaief.loupe.runtime.overlay
 
 /** Window sizing requested by the overlay UI. */
-internal enum class OverlayWindowMode { Collapsed, List, Fullscreen }
+internal enum class OverlayWindowMode { Collapsed, Sheet, Fullscreen }
 
 /** UI state machine for the overlay. */
 internal sealed interface OverlayState {
@@ -9,14 +9,14 @@ internal sealed interface OverlayState {
     data object Collapsed : OverlayState
 
     /** Composables list sheet, up to 33% of the screen, full width. */
-    data object List : OverlayState
+    data object Composables : OverlayState
 
     /** Fullscreen detail for one composable instance. */
     data class Detail(val instanceId: String) : OverlayState
 
     fun toWindowMode(): OverlayWindowMode = when (this) {
         Collapsed -> OverlayWindowMode.Collapsed
-        List -> OverlayWindowMode.List
+        Composables -> OverlayWindowMode.Sheet
         is Detail -> OverlayWindowMode.Fullscreen
     }
 }

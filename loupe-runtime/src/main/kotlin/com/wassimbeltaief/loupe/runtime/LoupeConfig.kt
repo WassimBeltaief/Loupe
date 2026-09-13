@@ -3,7 +3,6 @@ package com.wassimbeltaief.loupe.runtime
 data class LoupeConfig(
     val overlayEnabled: Boolean = true,
     val heatmapEnabled: Boolean = true,
-    val overlayPosition: OverlayPosition = OverlayPosition.BottomStart,
     val windowSeconds: Int = 5,
     val maxHistoryEntries: Int = 500,
     val recordingEnabled: Boolean = true,
@@ -18,5 +17,3 @@ data class LoupeConfig(
         "AnimatedVisibility*",
     ),
 )
-
-enum class OverlayPosition { TopStart, TopEnd, BottomStart, BottomEnd }

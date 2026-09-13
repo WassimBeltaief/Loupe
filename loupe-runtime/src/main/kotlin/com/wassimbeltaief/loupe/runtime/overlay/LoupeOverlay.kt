@@ -33,7 +33,7 @@ import kotlinx.coroutines.flow.StateFlow
 /**
  * Overlay orchestrator. Three states, each resizing the host window:
  *  - [OverlayState.Collapsed] — a full-width title bar pinned to the bottom
- *  - [OverlayState.List] — the composables sheet, up to 33% of the screen
+ *  - [OverlayState.Composables] — the composables sheet, up to 33% of the screen
  *  - [OverlayState.Detail] — fullscreen detail for one instance
  */
 @Composable
@@ -56,7 +56,7 @@ internal fun LoupeOverlay(
     // If the inspected instance disappears (reset/eviction), fall back to the list
     LaunchedEffect(state, instances) {
         val target = state as? OverlayState.Detail ?: return@LaunchedEffect
-        if (instances.none { it.instanceId == target.instanceId }) state = OverlayState.List
+        if (instances.none { it.instanceId == target.instanceId }) state = OverlayState.Composables
     }
 
     LaunchedEffect(state) { onWindowModeChange(state.toWindowMode()) }
@@ -72,10 +72,10 @@ internal fun LoupeOverlay(
         when (current) {
             OverlayState.Collapsed -> CollapsedBar(
                 count = visibleInstances.size,
-                onExpand = { state = OverlayState.List },
+                onExpand = { state = OverlayState.Composables },
             )
 
-            OverlayState.List -> OverlayListPanel(
+            OverlayState.Composables -> OverlayListPanel(
                 instances = visibleInstances,
                 config = config,
                 isPaused = isPaused,
@@ -92,7 +92,7 @@ internal fun LoupeOverlay(
                     DrillDownPanel(
                         history = history,
                         config = config,
-                        onBack = { state = OverlayState.List },
+                        onBack = { state = OverlayState.Composables },
                     )
                 }
         }

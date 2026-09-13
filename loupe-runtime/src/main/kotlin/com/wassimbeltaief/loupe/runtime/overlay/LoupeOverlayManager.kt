@@ -95,7 +95,7 @@ internal class LoupeOverlayManager(private val application: Application) {
                 params.width = WindowManager.LayoutParams.MATCH_PARENT
                 params.height = WindowManager.LayoutParams.WRAP_CONTENT
             }
-            OverlayWindowMode.List -> {
+            OverlayWindowMode.Sheet -> {
                 params.width = WindowManager.LayoutParams.MATCH_PARENT
                 params.height = listHeightPx()
             }

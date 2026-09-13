@@ -63,7 +63,6 @@ private const val COMPOSER_PARAM_NAME = "\$composer"
 internal class LoupeIrTransformer(
     private val pluginContext: IrPluginContext,
     private val messageCollector: MessageCollector,
-    internal val onComposableFound: ((String) -> Unit)? = null,
     private val packageFilter: List<String> = emptyList(),
 ) : IrElementTransformerVoid() {
 
@@ -195,10 +194,7 @@ internal class LoupeIrTransformer(
         if (!shouldInstrument(declaration)) return declaration
 
         val body = declaration.body as? IrBlockBody ?: return declaration
-        // Fire the callback as soon as we confirm this composable is eligible and has a real block
-        // body. Decoupled from buildRecordCall so visitor tests work without LoupeRuntime on classpath.
         val name = declaration.name.asString()
-        onComposableFound?.invoke(name)
 
         val recordCall = buildRecordCall(declaration) ?: return declaration
 

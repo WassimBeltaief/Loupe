@@ -24,7 +24,6 @@ import kotlinx.coroutines.launch
 object LoupeRuntime {
 
     @Volatile private var config = LoupeConfig()
-    @Volatile private var overlayDismissed = false
     @Volatile private var sessionStartMs = System.currentTimeMillis()
 
     private val _paused = MutableStateFlow(false)
@@ -71,7 +70,6 @@ object LoupeRuntime {
             overlayManager = manager
             ProcessLifecycleOwner.get().lifecycle.addObserver(object : DefaultLifecycleObserver {
                 override fun onStart(owner: LifecycleOwner) {
-                    if (overlayDismissed) return
                     val current = this@LoupeRuntime.config
                     // Heatmap window first so the interactive panel stays on top
                     if (current.heatmapEnabled) {
@@ -136,12 +134,6 @@ object LoupeRuntime {
 
     fun pause() { _paused.value = true }
     fun resume() { _paused.value = false }
-
-    // Hides the overlay for the rest of the session (header ✕ button)
-    fun dismissOverlay() {
-        overlayDismissed = true
-        overlayManager?.dismiss()
-    }
 
     fun reset() {
         registry.reset()

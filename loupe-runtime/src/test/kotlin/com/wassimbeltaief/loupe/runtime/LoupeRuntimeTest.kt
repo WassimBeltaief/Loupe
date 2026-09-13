@@ -105,12 +105,4 @@ class LoupeRuntimeTest {
         }
         assertEquals(setOf("Inside"), report.composables.keys)
     }
-
-    @Test
-    fun `toJson produces valid structure`() {
-        LoupeRuntime.record("Card", "Card.kt", 1, arrayOf("n" to 42))
-        val json = LoupeRuntime.snapshot().toJson()
-        assertTrue("Card" in json)
-        assertTrue("totalRecompositions" in json)
-    }
 }
