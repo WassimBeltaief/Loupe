@@ -3,7 +3,6 @@ package com.wassimbeltaief.loupe.runtime.overlay
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -23,9 +22,15 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -248,17 +253,20 @@ private fun Scrollbar(
     val visible = layoutInfo.visibleItemsInfo.size
     if (total == 0 || total <= visible) return
 
-    BoxWithConstraints(
+    val density = LocalDensity.current
+    var trackHeightPx by remember { mutableStateOf(0f) }
+
+    Box(
         modifier = modifier
             .width(3.dp)
-            .fillMaxHeight(),
+            .fillMaxHeight()
+            .onSizeChanged { trackHeightPx = it.height.toFloat() },
     ) {
-        val trackPx = constraints.maxHeight.toFloat()
         val thumbFraction = (visible.toFloat() / total).coerceIn(0.15f, 1f)
-        val thumbPx = trackPx * thumbFraction
+        val thumbPx = trackHeightPx * thumbFraction
         val maxScrollFraction = (total - visible).toFloat().coerceAtLeast(1f)
         val scrollFraction = (state.firstVisibleItemIndex / maxScrollFraction).coerceIn(0f, 1f)
-        val offsetPx = (trackPx - thumbPx) * scrollFraction
+        val offsetPx = (trackHeightPx - thumbPx) * scrollFraction
 
         Box(
             modifier = Modifier
@@ -268,11 +276,9 @@ private fun Scrollbar(
         ) {
             Box(
                 modifier = Modifier
-                    .offset(y = with(androidx.compose.ui.platform.LocalDensity.current) { offsetPx.toDp() })
+                    .offset(y = with(density) { offsetPx.toDp() })
                     .fillMaxWidth()
-                    .height(
-                        with(androidx.compose.ui.platform.LocalDensity.current) { thumbPx.toDp() },
-                    )
+                    .height(with(density) { thumbPx.toDp() })
                     .clip(RoundedCornerShape(2.dp))
                     .background(LoupeColors.OnSurfaceVariant),
             )

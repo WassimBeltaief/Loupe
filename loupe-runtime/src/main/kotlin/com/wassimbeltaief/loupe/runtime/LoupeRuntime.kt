@@ -20,6 +20,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import java.lang.ref.WeakReference
 
 /**
  * The entry point of Loupe and the place where all runtime state lives.
@@ -50,7 +51,10 @@ object LoupeRuntime {
 
     // Heatmap state
     private var heatmapController: HeatmapController? = null
-    @Volatile private var heatmapContentView: View? = null
+
+    // Held weakly. LoupeRuntime is a singleton, so a strong reference to the app's
+    // view would keep its Activity alive after it is destroyed.
+    @Volatile private var heatmapContentView: WeakReference<View>? = null
 
     // Per-key severity at the last Logcat summary. A summary is only emitted when
     // a composable crosses up into warm or hot, so Logcat is not flooded.
@@ -179,7 +183,7 @@ object LoupeRuntime {
     // ── Heatmap host API. Driven by LoupeHeatmapHost, on the main thread. ────
 
     internal fun attachInspectionTables(tables: MutableSet<CompositionData>, contentView: View) {
-        heatmapContentView = contentView
+        heatmapContentView = WeakReference(contentView)
         heatmapController?.attach(tables)
         Log.d("Loupe", "heatmap: host attached (tables=${tables.size}, view=${contentView.javaClass.simpleName})")
     }
@@ -197,7 +201,7 @@ object LoupeRuntime {
      * independently — the bug that made borders drift down by the status bar.
      */
     internal fun sampleHeatmap() {
-        val view = heatmapContentView ?: return
+        val view = heatmapContentView?.get() ?: return
         val controller = heatmapController ?: return
         val contentLocation = IntArray(2)
         view.getLocationOnScreen(contentLocation)

@@ -24,7 +24,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
 /**
- * Draws the heatmap: a severity-coloured dotted border and a count badge at the
+ * Draws the heatmap: a severity-coloured dotted border and a count badge in the
  * top-right corner of each tracked composable. It is drawn in a full-screen,
  * non-touchable window, so it never blocks app input.
  *
