@@ -7,7 +7,7 @@ import androidx.compose.ui.graphics.Color
  *
  * There are two systems, and they must not be mixed:
  * - Severity colours show how often something recomposes: red, amber or green.
- * - Verdict colours show the type of a change in the blame bar. Here the colour
+ * - Verdict colours show the type of change in the blame bar. Here the colour
  *   means "what kind of change", not "how bad it is". A lambda identity change
  *   is amber even when it caused many recompositions, because the cause may be
  *   legitimate.

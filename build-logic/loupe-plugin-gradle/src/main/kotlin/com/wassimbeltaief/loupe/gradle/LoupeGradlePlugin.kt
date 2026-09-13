@@ -21,8 +21,8 @@ import org.jetbrains.kotlin.gradle.plugin.SubpluginOption
 class LoupeGradlePlugin : KotlinCompilerPluginSupportPlugin {
 
     /** Registers the `loupe { }` extension. */
-    override fun apply(project: Project) {
-        project.extensions.create("loupe", LoupeExtension::class.java)
+    override fun apply(target: Project) {
+        target.extensions.create("loupe", LoupeExtension::class.java)
     }
 
     override fun getCompilerPluginId(): String = COMPILER_PLUGIN_ID

@@ -10,6 +10,7 @@ import androidx.compose.runtime.tooling.CompositionData
 import androidx.compose.runtime.tooling.LocalInspectionTables
 import androidx.compose.ui.platform.LocalView
 import kotlinx.coroutines.delay
+import kotlin.time.Duration.Companion.milliseconds
 
 /**
  * Turns on the heatmap by wrapping the app content once:
@@ -52,7 +53,7 @@ fun LoupeHeatmapHost(content: @Composable () -> Unit) {
     LaunchedEffect(tables) {
         while (true) {
             LoupeRuntime.sampleHeatmap()
-            delay(HEATMAP_SAMPLE_INTERVAL_MS)
+            delay(HEATMAP_SAMPLE_INTERVAL_MS.milliseconds)
         }
     }
 
