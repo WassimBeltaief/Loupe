@@ -4,11 +4,13 @@ import android.app.Application
 import android.util.Log
 import android.view.View
 import androidx.compose.runtime.tooling.CompositionData
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.InspectableValue
 import androidx.compose.ui.unit.IntOffset
 import androidx.lifecycle.DefaultLifecycleObserver
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.ProcessLifecycleOwner
-import com.wassimbeltaief.loupe.runtime.model.RecompositionHistory
+import com.wassimbeltaief.loupe.runtime.model.CompositionHistory
 import com.wassimbeltaief.loupe.runtime.overlay.HeatmapController
 import com.wassimbeltaief.loupe.runtime.overlay.LoupeOverlayManager
 import com.wassimbeltaief.loupe.runtime.registry.RecompositionRegistry
@@ -62,10 +64,10 @@ object LoupeRuntime {
     private val logcatScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
     /** Aggregated histories, one per composable function, keyed by `File.Function`. */
-    val state: StateFlow<Map<String, RecompositionHistory>> get() = registry.state
+    val state: StateFlow<Map<String, CompositionHistory>> get() = registry.state
 
     /** Per-instance histories — one row per on-screen instance in the overlay. */
-    val instances: StateFlow<List<RecompositionHistory>> get() = registry.instances
+    val instances: StateFlow<List<CompositionHistory>> get() = registry.instances
 
     private val noLiveInstanceIds = MutableStateFlow<Set<String>?>(null)
 
@@ -110,6 +112,27 @@ object LoupeRuntime {
     }
 
     /**
+     * Extracts the first `testTag` value from a `Modifier` chain, or `null` if none is present.
+     * Called by compiler-injected code for composables with a `modifier: Modifier` parameter.
+     * Not part of the public API.
+     *
+     * `Modifier.testTag` is a `ModifierNodeElement`, not a `SemanticsModifier`, so the tag
+     * cannot be read from a semantics configuration. It is exposed through Compose's
+     * inspectable-values API as a `ValueElement` named `tag`.
+     */
+    fun extractTestTag(modifier: Modifier): String? {
+        var tag: String? = null
+        modifier.foldIn(Unit) { _, element ->
+            if (tag == null && element is InspectableValue) {
+                tag = element.inspectableElements
+                    .firstOrNull { it.name == "tag" }
+                    ?.value as? String
+            }
+        }
+        return tag
+    }
+
+    /**
      * Called by compiler-injected code at the start of a composable body.
      * Not part of the public API.
      */
@@ -119,10 +142,11 @@ object LoupeRuntime {
         line: Int,
         params: Array<Pair<String, Any?>>,
         instance: Int = 0,
+        instanceTag: String? = null,
     ) {
         if (_paused.value || !config.recordingEnabled) return
         if (config.ignoreList.any { pattern -> key.matchesGlob(pattern) }) return
-        val record = registry.record(key, file, line, params, instance)
+        val record = registry.record(key, file, line, params, instance, instanceTag)
         // Verbose mode logs every single recomposition.
         if (config.logcatEnabled && config.logcatVerbose) {
             Log.d(LogcatFormatter.TAG, LogcatFormatter.verboseLine(record))
@@ -134,8 +158,8 @@ object LoupeRuntime {
      * composable body. It closes the record and stores the measured duration.
      * Not part of the public API.
      */
-    fun recordEnd(key: String, instance: Int = 0) {
-        registry.recordEnd(key, instance)
+    fun recordEnd(key: String, instance: Int = 0, instanceTag: String? = null) {
+        registry.recordEnd(key, instance, instanceTag = instanceTag)
     }
 
     /**
@@ -144,9 +168,9 @@ object LoupeRuntime {
      * instead of a forced recomposition with no visible cause.
      * Not part of the public API.
      */
-    fun trackState(key: String, instance: Int = 0, name: String, value: Any?) {
+    fun trackState(key: String, instance: Int = 0, name: String, value: Any?, instanceTag: String? = null) {
         if (_paused.value || !config.recordingEnabled) return
-        registry.trackState(key, instance, name, value)
+        registry.trackState(key, instance, name, value, instanceTag)
     }
 
     /**
@@ -220,14 +244,16 @@ object LoupeRuntime {
     /** Returns the current state as an immutable [LoupeReport]. */
     fun snapshot(): LoupeReport {
         val snap = registry.snapshot()
+        val tagged = registry.taggedSnapshot()
         val hot = snap.values.filter { it.windowRecompositions >= config.hotThreshold }
         val warm = snap.values.filter { it.windowRecompositions in config.warmThreshold until config.hotThreshold }
         return LoupeReport(
             durationMs = System.currentTimeMillis() - sessionStartMs,
             composables = snap,
-            totalRecompositions = snap.values.sumOf { it.totalRecompositions },
+            totalCompositions = snap.values.sumOf { it.totalCompositions },
             hotComposables = hot,
             warmComposables = warm,
+            instances = tagged,
         )
     }
 
@@ -243,14 +269,16 @@ object LoupeRuntime {
         block()
         val duration = System.currentTimeMillis() - start
         val snap = registry.snapshot()
+        val tagged = registry.taggedSnapshot()
         val hot = snap.values.filter { it.windowRecompositions >= config.hotThreshold }
         val warm = snap.values.filter { it.windowRecompositions in config.warmThreshold until config.hotThreshold }
         return LoupeReport(
             durationMs = duration,
             composables = snap,
-            totalRecompositions = snap.values.sumOf { it.totalRecompositions },
+            totalCompositions = snap.values.sumOf { it.totalCompositions },
             hotComposables = hot,
             warmComposables = warm,
+            instances = tagged,
         )
     }
 

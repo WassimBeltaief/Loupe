@@ -44,7 +44,7 @@ import com.wassimbeltaief.loupe.runtime.export.JsonExporter
 import com.wassimbeltaief.loupe.runtime.model.BlamedParam
 import com.wassimbeltaief.loupe.runtime.model.ParamSnapshot
 import com.wassimbeltaief.loupe.runtime.model.ParamVerdict
-import com.wassimbeltaief.loupe.runtime.model.RecompositionHistory
+import com.wassimbeltaief.loupe.runtime.model.CompositionHistory
 
 /**
  * The fullscreen detail for one instance.
@@ -59,7 +59,7 @@ import com.wassimbeltaief.loupe.runtime.model.RecompositionHistory
  */
 @Composable
 internal fun DrillDownPanel(
-    history: RecompositionHistory,
+    history: CompositionHistory,
     config: LoupeConfig,
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
@@ -95,7 +95,7 @@ internal fun DrillDownPanel(
             }
         }
         Text(
-            text = "${history.totalRecompositions}x total · " +
+            text = "${history.totalCompositions}x total · " +
                 "${"%.1f".format(java.util.Locale.US, history.totalDurationMs)}ms · " +
                 "${history.windowRecompositions} in window",
             color = LoupeColors.OnSurfaceVariant,
@@ -450,7 +450,7 @@ private fun BlameBar(blamedParams: List<BlamedParam>) {
 // ── Export ───────────────────────────────────────────────────────────────────
 
 @Composable
-private fun ExportButtons(history: RecompositionHistory) {
+private fun ExportButtons(history: CompositionHistory) {
     val context = LocalContext.current
     Row(
         modifier = Modifier

@@ -36,7 +36,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.wassimbeltaief.loupe.runtime.LoupeConfig
-import com.wassimbeltaief.loupe.runtime.model.RecompositionHistory
+import com.wassimbeltaief.loupe.runtime.model.CompositionHistory
 
 /**
  * Composables list sheet — full width, up to 33% of the screen (window-sized by
@@ -45,12 +45,12 @@ import com.wassimbeltaief.loupe.runtime.model.RecompositionHistory
  */
 @Composable
 internal fun OverlayListPanel(
-    instances: List<RecompositionHistory>,
+    instances: List<CompositionHistory>,
     config: LoupeConfig,
     isPaused: Boolean,
     onTogglePause: () -> Unit,
     onCollapse: () -> Unit,
-    onSelect: (RecompositionHistory) -> Unit,
+    onSelect: (CompositionHistory) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val listState = rememberLazyListState()
@@ -59,13 +59,13 @@ internal fun OverlayListPanel(
     // don't shuffle between updates.
     val ranked = instances
         .sortedWith(
-            compareByDescending<RecompositionHistory> { it.totalRecompositions }
+            compareByDescending<CompositionHistory> { it.totalCompositions }
                 .thenBy { it.instanceId }
         )
     val labels = ranked.groupBy { it.key }.let { byKey ->
         ranked.associate { history ->
             val group = byKey.getValue(history.key)
-                .sortedByDescending { it.totalRecompositions }
+                .sortedByDescending { it.totalCompositions }
             val short = history.key.substringAfterLast('.')
             history.instanceId to if (group.size > 1) {
                 "$short #${group.indexOf(history) + 1}"
@@ -74,7 +74,7 @@ internal fun OverlayListPanel(
             }
         }
     }
-    val maxCount = ranked.firstOrNull()?.totalRecompositions?.coerceAtLeast(1) ?: 1
+    val maxCount = ranked.firstOrNull()?.totalCompositions?.coerceAtLeast(1) ?: 1
 
     Column(
         modifier = modifier
@@ -158,17 +158,17 @@ internal fun OverlayListPanel(
 @Composable
 private fun ComposableRow(
     label: String,
-    history: RecompositionHistory,
+    history: CompositionHistory,
     maxCount: Int,
     config: LoupeConfig,
     onClick: () -> Unit,
 ) {
     val color = when {
-        history.totalRecompositions >= config.hotThreshold -> LoupeColors.Hot
-        history.totalRecompositions >= config.warmThreshold -> LoupeColors.Warm
+        history.totalCompositions >= config.hotThreshold -> LoupeColors.Hot
+        history.totalCompositions >= config.warmThreshold -> LoupeColors.Warm
         else -> LoupeColors.Healthy
     }
-    val barFraction = history.totalRecompositions.toFloat() / maxCount
+    val barFraction = history.totalCompositions.toFloat() / maxCount
 
     Row(
         modifier = Modifier
@@ -209,7 +209,7 @@ private fun ComposableRow(
         }
         Spacer(Modifier.width(8.dp))
         Text(
-            text = "${history.totalRecompositions}x",
+            text = "${history.totalCompositions}x",
             color = color,
             fontSize = 11.sp,
             fontWeight = FontWeight.Medium,

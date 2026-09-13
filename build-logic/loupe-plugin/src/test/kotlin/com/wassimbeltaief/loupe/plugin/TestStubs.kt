@@ -39,15 +39,25 @@ val loupeRuntimeStub = SourceFile.kotlin(
         val calls = mutableListOf<Map<String, Any?>>()
         val endCalls = mutableListOf<String>()
         val stateCalls = mutableListOf<List<Any?>>()
-        fun record(key: String, file: String, line: Int, params: Array<Pair<String, Any?>>, instance: Int) {
-            calls += mapOf("key" to key, "file" to file, "line" to line, "params" to params, "instance" to instance)
+        fun record(key: String, file: String, line: Int, params: Array<Pair<String, Any?>>, instance: Int, instanceTag: String?) {
+            calls += mapOf("key" to key, "file" to file, "line" to line, "params" to params, "instance" to instance, "instanceTag" to instanceTag)
         }
-        fun recordEnd(key: String, instance: Int) {
+        fun recordEnd(key: String, instance: Int, instanceTag: String?) {
             endCalls += key
         }
-        fun trackState(key: String, instance: Int, name: String, value: Any?) {
+        fun trackState(key: String, instance: Int, name: String, value: Any?, instanceTag: String?) {
             stateCalls += listOf(key, instance, name, value)
         }
+        fun extractTestTag(modifier: androidx.compose.ui.Modifier): String? = "tag:${'$'}modifier"
+    }
+    """.trimIndent()
+)
+
+val modifierStub = SourceFile.kotlin(
+    "Modifier.kt", """
+    package androidx.compose.ui
+    interface Modifier {
+        companion object : Modifier
     }
     """.trimIndent()
 )

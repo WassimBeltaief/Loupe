@@ -27,7 +27,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.wassimbeltaief.loupe.runtime.LoupeConfig
 import com.wassimbeltaief.loupe.runtime.LoupeRuntime
-import com.wassimbeltaief.loupe.runtime.model.RecompositionHistory
+import com.wassimbeltaief.loupe.runtime.model.CompositionHistory
 import kotlinx.coroutines.flow.StateFlow
 
 /**
@@ -38,7 +38,7 @@ import kotlinx.coroutines.flow.StateFlow
  */
 @Composable
 internal fun LoupeOverlay(
-    instancesFlow: StateFlow<List<RecompositionHistory>>,
+    instancesFlow: StateFlow<List<CompositionHistory>>,
     config: LoupeConfig,
     onWindowModeChange: (OverlayWindowMode) -> Unit,
 ) {

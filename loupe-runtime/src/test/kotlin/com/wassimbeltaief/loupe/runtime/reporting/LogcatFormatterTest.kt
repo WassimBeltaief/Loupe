@@ -3,7 +3,7 @@ package com.wassimbeltaief.loupe.runtime.reporting
 import com.wassimbeltaief.loupe.runtime.model.BlamedParam
 import com.wassimbeltaief.loupe.runtime.model.ParamSnapshot
 import com.wassimbeltaief.loupe.runtime.model.ParamVerdict
-import com.wassimbeltaief.loupe.runtime.model.RecompositionHistory
+import com.wassimbeltaief.loupe.runtime.model.CompositionHistory
 import com.wassimbeltaief.loupe.runtime.model.RecompositionRecord
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -14,12 +14,12 @@ class LogcatFormatterTest {
     private fun history(
         window: Int,
         blamed: List<BlamedParam> = emptyList(),
-    ) = RecompositionHistory(
+    ) = CompositionHistory(
         key = "ProductCard",
         file = "ProductCard.kt",
         line = 42,
         records = emptyList(),
-        totalRecompositions = 87,
+        totalCompositions = 87,
         windowRecompositions = window,
         totalDurationMs = 12.3f,
         blamedParams = blamed,

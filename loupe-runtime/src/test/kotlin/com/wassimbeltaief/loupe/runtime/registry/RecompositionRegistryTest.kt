@@ -48,7 +48,7 @@ class RecompositionRegistryTest {
 
         // window [2s, 7s] → records at t=2s and t=7s inside, t=0 outside → 2
         val history = reg.snapshot()["A"]!!
-        assertEquals(3, history.totalRecompositions)
+        assertEquals(3, history.totalCompositions)
         assertEquals(2, history.windowRecompositions)
     }
 
@@ -96,7 +96,7 @@ class RecompositionRegistryTest {
         val reg = registry()
         assertTrue(reg.state.value.isEmpty())
         reg.record("Card", "Card.kt", 1, arrayOf("n" to 1))
-        assertEquals(1, reg.state.value["Card"]!!.totalRecompositions)
+        assertEquals(1, reg.state.value["Card"]!!.totalCompositions)
     }
 
     // ── #36: duration measurement ────────────────────────────────────────────
@@ -139,7 +139,7 @@ class RecompositionRegistryTest {
         reg.record("Card", "Card.kt", 1, arrayOf("n" to 1))
         reg.recordEnd("Card")
         reg.recordEnd("Card")            // double-end: second one has no unset record
-        assertEquals(1, reg.snapshot()["Card"]!!.totalRecompositions)
+        assertEquals(1, reg.snapshot()["Card"]!!.totalCompositions)
     }
 
     @Test
@@ -152,7 +152,7 @@ class RecompositionRegistryTest {
         reg.record("Card", "Card.kt", 1, arrayOf("n" to 2))   // never ended (exception in finally? registry swap?)
 
         val history = reg.snapshot()["Card"]!!
-        assertEquals(2, history.totalRecompositions)
+        assertEquals(2, history.totalCompositions)
         assertEquals(1.0f, history.totalDurationMs, 0.001f, "only the ended record contributes")
     }
 
@@ -168,10 +168,10 @@ class RecompositionRegistryTest {
         assertEquals(2, instances.size)
         assertTrue(instances.all { it.key == "Card" })
         assertEquals(2, instances.map { it.instanceId }.distinct().size)
-        assertTrue(instances.all { it.totalRecompositions == 1 }, "each instance counts its own recompositions")
+        assertTrue(instances.all { it.totalCompositions == 1 }, "each instance counts its own recompositions")
 
         // Aggregate still combines them for the heatmap / CI report
-        assertEquals(2, reg.snapshot()["Card"]!!.totalRecompositions)
+        assertEquals(2, reg.snapshot()["Card"]!!.totalCompositions)
     }
 
     @Test
@@ -205,8 +205,33 @@ class RecompositionRegistryTest {
         reg.record("Card", "Card.kt", 1, arrayOf("n" to 1), instance = 2)   // initial only
 
         val byId = reg.instances.value.associateBy { it.instanceId }
-        assertEquals(3, byId.getValue("Card#1").totalRecompositions)
-        assertEquals(1, byId.getValue("Card#2").totalRecompositions)
+        assertEquals(3, byId.getValue("Card#1").totalCompositions)
+        assertEquals(1, byId.getValue("Card#2").totalCompositions)
+    }
+
+    @Test
+    fun `tagged instance also appears in the overlay instance view`() {
+        val reg = registry()
+        reg.record("Card", "Card.kt", 1, arrayOf("n" to 1), instance = 100, instanceTag = "Card_1")
+
+        // A testTag indexes the instance for the testing API…
+        assertEquals(1, reg.taggedSnapshot().getValue("Card_1").totalCompositions)
+        // …and must not remove it from the overlay/heatmap view.
+        assertTrue(reg.instances.value.any { it.instanceId == "Card#100" })
+    }
+
+    @Test
+    fun `recordEnd and trackState update a tagged instance`() {
+        var now = 1_000_000_000L
+        val reg = registry(time = { now })
+        reg.record("Card", "Card.kt", 1, emptyArray(), instance = 100, instanceTag = "Card_1")
+        reg.trackState("Card", instance = 100, name = "counter", value = 0, instanceTag = "Card_1")
+        now += 3_000_000L
+        reg.recordEnd("Card", instance = 100, instanceTag = "Card_1")
+
+        val tagged = reg.taggedSnapshot().getValue("Card_1")
+        assertEquals(3_000_000L, tagged.records[0].durationNs)
+        assertEquals(1, tagged.records[0].stateChanges.size)
     }
 
     // ── local state tracking ─────────────────────────────────────────────────

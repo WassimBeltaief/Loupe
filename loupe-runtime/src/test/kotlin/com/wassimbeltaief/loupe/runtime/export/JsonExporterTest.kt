@@ -3,7 +3,7 @@ package com.wassimbeltaief.loupe.runtime.export
 import com.wassimbeltaief.loupe.runtime.model.BlamedParam
 import com.wassimbeltaief.loupe.runtime.model.ParamSnapshot
 import com.wassimbeltaief.loupe.runtime.model.ParamVerdict
-import com.wassimbeltaief.loupe.runtime.model.RecompositionHistory
+import com.wassimbeltaief.loupe.runtime.model.CompositionHistory
 import com.wassimbeltaief.loupe.runtime.model.RecompositionRecord
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -12,7 +12,7 @@ import kotlin.test.assertTrue
 
 class JsonExporterTest {
 
-    private fun history() = RecompositionHistory(
+    private fun history() = CompositionHistory(
         key = "ProductCard",
         file = "ProductCard.kt",
         line = 42,
@@ -31,7 +31,7 @@ class JsonExporterTest {
                 wasForced = false,
             ),
         ),
-        totalRecompositions = 1,
+        totalCompositions = 1,
         windowRecompositions = 1,
         totalDurationMs = 2.0f,
         blamedParams = listOf(
@@ -46,7 +46,7 @@ class JsonExporterTest {
         assertTrue(json.contains("\"key\":\"ProductCard\""))
         assertTrue(json.contains("\"file\":\"ProductCard.kt\""))
         assertTrue(json.contains("\"line\":42"))
-        assertTrue(json.contains("\"totalRecompositions\":1"))
+        assertTrue(json.contains("\"totalCompositions\":1"))
         assertTrue(json.contains("\"blamedParams\":["))
         assertTrue(json.contains("\"records\":["))
         assertTrue(json.contains("\"verdict\":\"LambdaIdentity\""))

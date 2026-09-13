@@ -36,6 +36,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
@@ -180,6 +181,7 @@ fun AlbumGridScreen(
                     album = album,
                     onOpen = onOpen,
                     onLike = onLike,
+                    modifier = Modifier.testTag("AlbumCard_${album.id}"),
                 )
             }
         }
@@ -191,9 +193,10 @@ private fun AlbumCard(
     album: Album,
     onOpen: (Long) -> Unit,
     onLike: (Long) -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     Column(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(16.dp))
             .background(LoupeSurface)
@@ -229,6 +232,7 @@ private fun AlbumCard(
             // Remembered per album id: each card owns one stable click lambda,
             // so untouched cards keep skipping when a single like changes.
             onClick = remember(album.id) { { onLike(album.id) } },
+            modifier = Modifier.testTag("LikeButton_${album.id}"),
         )
     }
 }
@@ -287,6 +291,7 @@ fun AlbumDetailScreen(album: Album, onBack: () -> Unit, onLike: (Long) -> Unit) 
                         liked = album.liked,
                         compact = true,
                         onClick = remember(album.id) { { onLike(album.id) } },
+                        modifier = Modifier.testTag("LikeButton_detail"),
                     )
                 }
             }
@@ -366,9 +371,10 @@ private fun LikeButton(
     liked: Boolean,
     compact: Boolean = false,
     onClick: () -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     Row(
-        modifier = Modifier
+        modifier = modifier
             .clip(RoundedCornerShape(999.dp))
             .background(if (liked) LoupeGreen.copy(alpha = 0.14f) else LoupeSurfaceMuted)
             .clickable(onClick = onClick)

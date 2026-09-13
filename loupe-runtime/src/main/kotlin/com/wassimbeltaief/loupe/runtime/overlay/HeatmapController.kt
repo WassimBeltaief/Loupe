@@ -7,7 +7,7 @@ import androidx.compose.ui.tooling.data.asTree
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntRect
 import com.wassimbeltaief.loupe.runtime.LoupeConfig
-import com.wassimbeltaief.loupe.runtime.model.RecompositionHistory
+import com.wassimbeltaief.loupe.runtime.model.CompositionHistory
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -33,7 +33,7 @@ import kotlinx.coroutines.flow.asStateFlow
  */
 internal class HeatmapController(
     private val config: LoupeConfig,
-    private val instances: () -> List<RecompositionHistory>,
+    private val instances: () -> List<CompositionHistory>,
     private val onInstanceGone: (instanceId: String) -> Unit = {},
 ) {
     /**
@@ -118,11 +118,11 @@ internal class HeatmapController(
             keyBoxes.forEachIndexed { i, rawBox ->
                 val instance = instances.getOrNull(i)
                 if (instance != null) {
-                    pairedBoxes += PairedBox(rawBox, instance.totalRecompositions, instance.instanceId)
+                    pairedBoxes += PairedBox(rawBox, instance.totalCompositions, instance.instanceId)
                     liveIds += instance.instanceId
                 } else {
                     // More boxes than instances — fall back to aggregate (max) count
-                    val aggregate = instances.maxOfOrNull { it.totalRecompositions } ?: 0
+                    val aggregate = instances.maxOfOrNull { it.totalCompositions } ?: 0
                     pairedBoxes += PairedBox(rawBox, aggregate, null)
                 }
             }
@@ -158,10 +158,10 @@ internal class HeatmapController(
         logDiagnostics(raw, boxes, byKey.keys)
     }
 
-    private fun RecompositionHistory.latestNs(): Long =
+    private fun CompositionHistory.latestNs(): Long =
         records.firstOrNull()?.timestampNs ?: Long.MIN_VALUE
 
-    private fun RecompositionHistory.earliestNs(): Long =
+    private fun CompositionHistory.earliestNs(): Long =
         records.lastOrNull()?.timestampNs ?: Long.MAX_VALUE
 
     /** Key match first; fall back to the composable's simple name. */

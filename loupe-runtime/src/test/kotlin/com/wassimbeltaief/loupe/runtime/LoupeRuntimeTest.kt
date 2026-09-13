@@ -3,7 +3,6 @@ package com.wassimbeltaief.loupe.runtime
 import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
-import kotlin.test.assertFailsWith
 import kotlin.test.assertTrue
 
 class LoupeRuntimeTest {
@@ -17,14 +16,14 @@ class LoupeRuntimeTest {
     @Test
     fun `record stores recomposition`() {
         LoupeRuntime.record("Card", "Card.kt", 1, arrayOf("n" to 1))
-        assertEquals(1, LoupeRuntime.snapshot().totalRecompositions)
+        assertEquals(1, LoupeRuntime.snapshot().totalCompositions)
     }
 
     @Test
     fun `pause stops recording`() {
         LoupeRuntime.pause()
         LoupeRuntime.record("Card", "Card.kt", 1, arrayOf("n" to 1))
-        assertEquals(0, LoupeRuntime.snapshot().totalRecompositions)
+        assertEquals(0, LoupeRuntime.snapshot().totalCompositions)
     }
 
     @Test
@@ -50,14 +49,14 @@ class LoupeRuntimeTest {
         LoupeRuntime.record("Card", "Card.kt", 1, arrayOf("n" to 1))
         LoupeRuntime.resume()
         LoupeRuntime.record("Card", "Card.kt", 1, arrayOf("n" to 2))
-        assertEquals(1, LoupeRuntime.snapshot().totalRecompositions)
+        assertEquals(1, LoupeRuntime.snapshot().totalCompositions)
     }
 
     @Test
     fun `reset clears history`() {
         LoupeRuntime.record("Card", "Card.kt", 1, arrayOf("n" to 1))
         LoupeRuntime.reset()
-        assertEquals(0, LoupeRuntime.snapshot().totalRecompositions)
+        assertEquals(0, LoupeRuntime.snapshot().totalCompositions)
     }
 
     @Test
@@ -66,7 +65,7 @@ class LoupeRuntimeTest {
         LoupeRuntime.record("Cursor", "Cursor.kt", 1, arrayOf())
         LoupeRuntime.record("BlinkingDot", "BlinkingDot.kt", 1, arrayOf())
         LoupeRuntime.record("Card", "Card.kt", 1, arrayOf())
-        assertEquals(1, LoupeRuntime.snapshot().totalRecompositions)
+        assertEquals(1, LoupeRuntime.snapshot().totalCompositions)
     }
 
     @Test
@@ -83,18 +82,18 @@ class LoupeRuntimeTest {
     }
 
     @Test
-    fun `assertMaxRecompositions throws on violation`() {
+    fun `composable with multiple records exceeds budget`() {
         LoupeRuntime.record("Card", "Card.kt", 1, arrayOf("n" to 1))
         LoupeRuntime.record("Card", "Card.kt", 1, arrayOf("n" to 2))
         val report = LoupeRuntime.snapshot()
-        assertFailsWith<AssertionError> { report.assertMaxRecompositions(1) }
+        assertTrue(report.composables["Card"]!!.totalCompositions > 1)
     }
 
     @Test
-    fun `assertStable throws when composable recomposed`() {
+    fun `composable recomposed more than once is not stable`() {
         LoupeRuntime.record("Card", "Card.kt", 1, arrayOf("n" to 1))
         LoupeRuntime.record("Card", "Card.kt", 1, arrayOf("n" to 2))
-        assertFailsWith<AssertionError> { LoupeRuntime.snapshot().assertStable("Card") }
+        assertTrue(LoupeRuntime.snapshot().composables["Card"]!!.totalCompositions > 1)
     }
 
     @Test

@@ -28,4 +28,5 @@ dependencyResolutionManagement {
 rootProject.name = "loupe"
 
 include(":loupe-runtime")
+include(":loupe-testing")
 include(":loupe-sample-android")
