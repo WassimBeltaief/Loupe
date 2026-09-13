@@ -151,6 +151,7 @@ fun AlbumApp(viewModel: AlbumsViewModel = viewModel()) {
             album = selected,
             onBack = onBack,
             onLike = onLike,
+            viewModel = viewModel,
         )
     }
 }
@@ -240,7 +241,12 @@ private fun AlbumCard(
 // ── Album detail ─────────────────────────────────────────────────────────────
 
 @Composable
-fun AlbumDetailScreen(album: Album, onBack: () -> Unit, onLike: (Long) -> Unit) {
+fun AlbumDetailScreen(
+    album: Album,
+    onBack: () -> Unit,
+    onLike: (Long) -> Unit,
+    viewModel: AlbumsViewModel,
+) {
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -295,6 +301,84 @@ fun AlbumDetailScreen(album: Album, onBack: () -> Unit, onLike: (Long) -> Unit) 
                     )
                 }
             }
+
+            Spacer(Modifier.height(20.dp))
+            CommentsSection(
+                viewModel = viewModel,
+                modifier = Modifier.testTag("CommentsSection"),
+            )
+            Spacer(Modifier.height(96.dp))
+        }
+    }
+}
+
+// ── Comments (the unhappy path) ──────────────────────────────────────────────
+
+/**
+ * Deliberately bad: it reads the whole [AlbumDetailUiState], whose `listeningNow`
+ * field changes every second, so this entire comment list recomposes once a second
+ * even though the comments themselves are constant.
+ */
+@Composable
+private fun CommentsSection(viewModel: AlbumsViewModel, modifier: Modifier = Modifier) {
+    val state by viewModel.detail.collectAsStateWithLifecycle()
+
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(16.dp))
+            .background(LoupeSurface)
+            .border(1.dp, LoupeOutline, RoundedCornerShape(16.dp))
+            .padding(16.dp),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                text = "COMMENTS",
+                style = MaterialTheme.typography.labelSmall,
+                color = LoupeMuted,
+            )
+            Spacer(Modifier.weight(1f))
+            Text(
+                text = "${state.listeningNow} listening now",
+                style = MaterialTheme.typography.labelSmall,
+                color = LoupeGreen,
+            )
+        }
+        Spacer(Modifier.height(12.dp))
+        state.comments.forEach { comment ->
+            CommentRow(comment)
+            Spacer(Modifier.height(10.dp))
+        }
+    }
+}
+
+@Composable
+private fun CommentRow(comment: Comment) {
+    Row(verticalAlignment = Alignment.Top) {
+        Box(
+            modifier = Modifier
+                .clip(CircleShape)
+                .background(LoupeSurfaceMuted)
+                .padding(horizontal = 10.dp, vertical = 6.dp),
+        ) {
+            Text(
+                text = comment.author.take(1).uppercase(),
+                style = MaterialTheme.typography.labelMedium,
+                color = LoupeMuted,
+            )
+        }
+        Spacer(Modifier.width(10.dp))
+        Column {
+            Text(
+                text = comment.author,
+                style = MaterialTheme.typography.labelLarge,
+                color = LoupeInk,
+            )
+            Text(
+                text = comment.text,
+                style = MaterialTheme.typography.bodyMedium,
+                color = LoupeMuted,
+            )
         }
     }
 }

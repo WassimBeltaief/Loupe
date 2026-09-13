@@ -7,6 +7,7 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.wassimbeltaief.loupe.testing.LoupeTestRule
+import com.wassimbeltaief.loupe.testing.atLeast
 import com.wassimbeltaief.loupe.testing.atMost
 import com.wassimbeltaief.loupe.testing.maxRecompositionTimeInMs
 import com.wassimbeltaief.loupe.testing.shouldNeverRecompose
@@ -64,6 +65,26 @@ class AlbumRecompositionTest {
         rule.onAllNodesWithText("♡")[0].performClick()
         rule.waitForIdle()
         rule.onNodeWithTag("LikeButton_1").maxRecompositionTimeInMs(16f)
+    }
+
+    // ── Unhappy path ──────────────────────────────────────────────────────────
+
+    // The comment area reads a viewmodel state that ticks every second, so it
+    // recomposes continuously even though the comments themselves never change.
+    @Test
+    fun commentsSectionRecomposesEverySecond() {
+        launchApp()
+        rule.onNodeWithText("Midnight Signals").performClick()
+        rule.waitForIdle()
+
+        // Let the viewmodel tick, pumping a frame after each tick so every state
+        // update produces its own recomposition instead of being coalesced.
+        repeat(3) {
+            Thread.sleep(1_100)
+            rule.waitForIdle()
+        }
+
+        rule.onNodeWithTag("CommentsSection").shouldRecompose(atLeast(3))
     }
 
     // ── Interaction tests ─────────────────────────────────────────────────────
