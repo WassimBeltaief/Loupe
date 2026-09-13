@@ -1,5 +1,6 @@
 package com.wassimbeltaief.loupe.runtime.export
 
+import com.wassimbeltaief.loupe.runtime.model.ParamSnapshot
 import com.wassimbeltaief.loupe.runtime.model.RecompositionHistory
 
 /**
@@ -25,6 +26,7 @@ object JsonExporter {
             field("recompositionCount", b.recompositionCount); comma()
             field("fraction", b.fraction); comma()
             field("dominantVerdict", b.dominantVerdict::class.simpleName ?: "Unknown"); comma()
+            field("state", b.isState); comma()
             nullableField("suggestion", b.suggestion)
             append("}")
         }
@@ -36,22 +38,30 @@ object JsonExporter {
             field("timestampNs", r.timestampNs); comma()
             field("durationNs", r.durationNs); comma()
             field("wasForced", r.wasForced); comma()
-            append("\"params\":[")
-            r.params.forEachIndexed { j, p ->
-                if (j > 0) comma()
-                append("{")
-                field("name", p.name); comma()
-                field("previousValue", p.previousValue); comma()
-                field("currentValue", p.currentValue); comma()
-                field("verdict", p.verdict::class.simpleName ?: "Unknown"); comma()
-                nullableField("suggestion", p.suggestion)
-                append("}")
-            }
-            append("]")
+            append("\"params\":")
+            snapshotArray(r.params)
+            comma()
+            append("\"stateChanges\":")
+            snapshotArray(r.stateChanges)
             append("}")
         }
         append("]")
         append("}")
+    }
+
+    private fun StringBuilder.snapshotArray(snapshots: List<ParamSnapshot>) {
+        append("[")
+        snapshots.forEachIndexed { j, p ->
+            if (j > 0) comma()
+            append("{")
+            field("name", p.name); comma()
+            field("previousValue", p.previousValue); comma()
+            field("currentValue", p.currentValue); comma()
+            field("verdict", p.verdict::class.simpleName ?: "Unknown"); comma()
+            nullableField("suggestion", p.suggestion)
+            append("}")
+        }
+        append("]")
     }
 
     private fun StringBuilder.comma() = append(",")

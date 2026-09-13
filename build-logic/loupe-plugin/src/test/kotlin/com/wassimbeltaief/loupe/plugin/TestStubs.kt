@@ -38,12 +38,33 @@ val loupeRuntimeStub = SourceFile.kotlin(
     object LoupeRuntime {
         val calls = mutableListOf<Map<String, Any?>>()
         val endCalls = mutableListOf<String>()
-        fun record(key: String, file: String, line: Int, params: Array<Pair<String, Any?>>) {
-            calls += mapOf("key" to key, "file" to file, "line" to line, "params" to params)
+        val stateCalls = mutableListOf<List<Any?>>()
+        fun record(key: String, file: String, line: Int, params: Array<Pair<String, Any?>>, instance: Int) {
+            calls += mapOf("key" to key, "file" to file, "line" to line, "params" to params, "instance" to instance)
         }
-        fun recordEnd(key: String) {
+        fun recordEnd(key: String, instance: Int) {
             endCalls += key
         }
+        fun trackState(key: String, instance: Int, name: String, value: Any?) {
+            stateCalls += listOf(key, instance, name, value)
+        }
+    }
+    """.trimIndent()
+)
+
+val composeStateStub = SourceFile.kotlin(
+    "State.kt", """
+    package androidx.compose.runtime
+    import kotlin.reflect.KProperty
+    interface State<out T> { val value: T }
+    interface MutableState<T> : State<T> { override var value: T }
+    fun <T> mutableStateOf(value: T): MutableState<T> = object : MutableState<T> {
+        override var value: T = value
+    }
+    fun <T> remember(calculation: () -> T): T = calculation()
+    operator fun <T> MutableState<T>.getValue(thisObj: Any?, property: KProperty<*>): T = value
+    operator fun <T> MutableState<T>.setValue(thisObj: Any?, property: KProperty<*>, value: T) {
+        this.value = value
     }
     """.trimIndent()
 )

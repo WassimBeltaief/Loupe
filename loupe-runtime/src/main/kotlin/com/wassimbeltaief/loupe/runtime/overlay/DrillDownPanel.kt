@@ -1,226 +1,163 @@
 package com.wassimbeltaief.loupe.runtime.overlay
 
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
 import android.content.Intent
-import androidx.compose.animation.core.Animatable
-import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.wassimbeltaief.loupe.runtime.LoupeConfig
 import com.wassimbeltaief.loupe.runtime.analysis.BurstGrouper
 import com.wassimbeltaief.loupe.runtime.export.JsonExporter
 import com.wassimbeltaief.loupe.runtime.model.BlamedParam
 import com.wassimbeltaief.loupe.runtime.model.ParamSnapshot
 import com.wassimbeltaief.loupe.runtime.model.ParamVerdict
 import com.wassimbeltaief.loupe.runtime.model.RecompositionHistory
-import kotlinx.coroutines.launch
 
 /**
- * #16/#17: drill-down panel — full recomposition timeline with burst grouping,
- * verdict tag chips, suggestions, parameter blame bar, and JSON export (#19).
- *
- * Rendered as a bottom sheet (bottom 70% of the screen). Does NOT close on
- * outside tap (the window lets touches pass through) — only via the ✕ button
- * or a downward drag past the dismiss threshold (#18).
+ * #16/#17: fullscreen detail — timeline (burst-grouped) with verdict chips and
+ * suggestions, parameter blame bar, and JSON export (#19). Light/cream theme.
  */
 @Composable
 internal fun DrillDownPanel(
     history: RecompositionHistory,
-    onClose: () -> Unit,
+    config: LoupeConfig,
+    onBack: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val scope = rememberCoroutineScope()
-    val offsetY = remember { Animatable(0f) }
-    val dismissThresholdPx = with(LocalDensity.current) { 140.dp.toPx() }
-
     Column(
         modifier = modifier
-            .fillMaxWidth()
-            .fillMaxHeight(0.7f)
-            .graphicsLayer { translationY = offsetY.value }
-            .clip(RoundedCornerShape(topStart = 14.dp, topEnd = 14.dp))
-            .background(LoupeColors.Surface),
+            .fillMaxSize()
+            .padding(LoupeSheetInset)
+            .loupeSheetSurface(cornerRadius = 20.dp),
     ) {
-        // ── Drag handle + header (draggable, swipe down to dismiss) ─────────
-        Column(
+        // Header: back · name + file:line · close
+        Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .pointerInput(Unit) {
-                    detectVerticalDragGestures(
-                        onVerticalDrag = { change, dragAmount ->
-                            change.consume()
-                            scope.launch {
-                                offsetY.snapTo((offsetY.value + dragAmount).coerceAtLeast(0f))
-                            }
-                        },
-                        onDragEnd = {
-                            scope.launch {
-                                if (offsetY.value > dismissThresholdPx) {
-                                    onClose()
-                                } else {
-                                    offsetY.animateTo(0f, spring())
-                                }
-                            }
-                        },
-                    )
-                },
+                .padding(start = 8.dp, end = 8.dp, top = 10.dp, bottom = 6.dp),
+            verticalAlignment = Alignment.CenterVertically,
         ) {
-            Box(
-                modifier = Modifier
-                    .align(Alignment.CenterHorizontally)
-                    .padding(top = 8.dp)
-                    .width(36.dp)
-                    .height(4.dp)
-                    .clip(RoundedCornerShape(2.dp))
-                    .background(LoupeColors.OnSurface.copy(alpha = 0.3f)),
-            )
-            Row(
-                modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = history.key,
-                        color = LoupeColors.OnSurface,
-                        fontSize = 14.sp,
-                        fontWeight = FontWeight.Bold,
-                        fontFamily = FontFamily.Monospace,
-                    )
-                    Text(
-                        text = "${history.file} : ${history.line}",
-                        color = LoupeColors.OnSurface.copy(alpha = 0.5f),
-                        fontSize = 10.sp,
-                        fontFamily = FontFamily.Monospace,
-                    )
-                    Text(
-                        text = "${history.totalRecompositions}x · " +
-                            "${"%.1f".format(java.util.Locale.US, history.totalDurationMs)}ms total · " +
-                            "${history.windowRecompositions} in window",
-                        color = LoupeColors.OnSurface.copy(alpha = 0.7f),
-                        fontSize = 11.sp,
-                    )
-                }
+            HeaderAction(glyph = "←", onClick = onBack)
+            Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = "✕",
+                    text = history.key.substringAfterLast('.'),
                     color = LoupeColors.OnSurface,
                     fontSize = 16.sp,
-                    modifier = Modifier
-                        .clip(CircleShape)
-                        .clickable(onClick = onClose)
-                        .padding(8.dp),
+                    fontWeight = FontWeight.Bold,
+                    fontFamily = FontFamily.Monospace,
+                )
+                Text(
+                    text = "${history.file} : ${history.line}",
+                    color = LoupeColors.OnSurfaceVariant,
+                    fontSize = 11.sp,
+                    fontFamily = FontFamily.Monospace,
                 )
             }
         }
-
+        Text(
+            text = "${history.totalRecompositions}x total · " +
+                "${"%.1f".format(java.util.Locale.US, history.totalDurationMs)}ms · " +
+                "${history.windowRecompositions} in window",
+            color = LoupeColors.OnSurfaceVariant,
+            fontSize = 12.sp,
+            modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 8.dp),
+        )
         Divider()
 
-        // ── Timeline ─────────────────────────────────────────────────────────
-        Text(
-            text = "TIMELINE",
-            color = LoupeColors.OnSurface.copy(alpha = 0.5f),
-            fontSize = 9.sp,
-            fontWeight = FontWeight.SemiBold,
-            modifier = Modifier.padding(horizontal = 14.dp, vertical = 4.dp),
-        )
-        val bursts = remember(history.records) { BurstGrouper.group(history.records) }
-        var expandedBurst by remember { mutableStateOf<Int?>(null) }
-        LazyColumn(
+        Column(
             modifier = Modifier
-                .weight(1f)
-                .fillMaxWidth()
-                .padding(horizontal = 14.dp),
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 16.dp),
         ) {
-            items(bursts.size) { index ->
-                BurstRow(
-                    burst = bursts[index],
+            SectionLabel("RECOMPOSITION HISTORY — NEWEST FIRST")
+            val bursts = remember(history.records) { BurstGrouper.group(history.records) }
+            // Frozen "now": recompute only when the newest record changes, never on
+            // expand/collapse — otherwise tapping changes every row's "ago" value.
+            val referenceNs = remember(history.records.firstOrNull()?.timestampNs) { System.nanoTime() }
+            var expandedBurst by remember { mutableStateOf<Int?>(null) }
+            bursts.forEachIndexed { index, burst ->
+                BurstBlock(
+                    burst = burst,
+                    config = config,
+                    referenceNs = referenceNs,
                     expanded = expandedBurst == index,
                     onToggle = { expandedBurst = if (expandedBurst == index) null else index },
                 )
             }
-        }
 
-        Divider()
+            Spacer(Modifier.height(12.dp))
+            Divider()
+            SectionLabel("PARAMETER BLAME")
+            BlameBar(history.blamedParams)
 
-        // ── Parameter blame bar (#17) ────────────────────────────────────────
-        Text(
-            text = "PARAMETER BLAME",
-            color = LoupeColors.OnSurface.copy(alpha = 0.5f),
-            fontSize = 9.sp,
-            fontWeight = FontWeight.SemiBold,
-            modifier = Modifier.padding(horizontal = 14.dp, vertical = 4.dp),
-        )
-        BlameBar(history.blamedParams)
-
-        Divider()
-
-        // ── Export (#19) ─────────────────────────────────────────────────────
-        val context = LocalContext.current
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 14.dp, vertical = 8.dp),
-            horizontalArrangement = Arrangement.spacedBy(10.dp),
-        ) {
-            PanelButton(label = "Share report", modifier = Modifier.weight(1f)) {
-                val json = JsonExporter.historyToJson(history)
-                val send = Intent(Intent.ACTION_SEND).apply {
-                    type = "application/json"
-                    putExtra(Intent.EXTRA_TEXT, json)
-                    putExtra(Intent.EXTRA_SUBJECT, "Loupe report — ${history.key}")
-                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                }
-                val chooser = Intent.createChooser(send, "Share Loupe report")
-                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                context.startActivity(chooser)
-            }
-            PanelButton(label = "Copy JSON", modifier = Modifier.weight(1f)) {
-                val json = JsonExporter.historyToJson(history)
-                val clipboard = context.getSystemService(android.content.Context.CLIPBOARD_SERVICE)
-                    as android.content.ClipboardManager
-                clipboard.setPrimaryClip(
-                    android.content.ClipData.newPlainText("Loupe report — ${history.key}", json)
-                )
-            }
+            Spacer(Modifier.height(12.dp))
+            Divider()
+            ExportButtons(history)
+            Spacer(Modifier.height(16.dp))
         }
     }
 }
 
 @Composable
+private fun HeaderAction(glyph: String, onClick: () -> Unit) {
+    Box(
+        modifier = Modifier
+            .clip(CircleShape)
+            .clickable(onClick = onClick)
+            .padding(horizontal = 12.dp, vertical = 8.dp),
+    ) {
+        Text(text = glyph, color = LoupeColors.OnSurface, fontSize = 17.sp)
+    }
+}
+
+@Composable
+private fun SectionLabel(text: String) {
+    Text(
+        text = text,
+        color = LoupeColors.OnSurfaceVariant,
+        fontSize = 10.sp,
+        fontWeight = FontWeight.SemiBold,
+        modifier = Modifier.padding(top = 12.dp, bottom = 6.dp),
+    )
+}
+
+@Composable
 private fun Divider() {
-    Spacer(
+    Box(
         modifier = Modifier
             .fillMaxWidth()
             .height(1.dp)
@@ -228,25 +165,13 @@ private fun Divider() {
     )
 }
 
-@Composable
-private fun PanelButton(label: String, modifier: Modifier = Modifier, onClick: () -> Unit) {
-    Box(
-        modifier = modifier
-            .clip(RoundedCornerShape(8.dp))
-            .background(LoupeColors.Divider)
-            .clickable(onClick = onClick)
-            .padding(vertical = 10.dp),
-        contentAlignment = Alignment.Center,
-    ) {
-        Text(text = label, color = LoupeColors.OnSurface, fontSize = 12.sp, fontWeight = FontWeight.Medium)
-    }
-}
-
 // ── Timeline bursts ──────────────────────────────────────────────────────────
 
 @Composable
-private fun BurstRow(
+private fun BurstBlock(
     burst: BurstGrouper.Burst,
+    config: LoupeConfig,
+    referenceNs: Long,
     expanded: Boolean,
     onToggle: () -> Unit,
 ) {
@@ -254,14 +179,15 @@ private fun BurstRow(
         modifier = Modifier
             .fillMaxWidth()
             .clickable(onClick = onToggle)
-            .padding(vertical = 4.dp),
+            .padding(vertical = 5.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
+            // Severity by recomposition ordinal: 1 green · warm..hot amber · ≥hot red
             Box(
                 modifier = Modifier
-                    .size(6.dp)
+                    .size(8.dp)
                     .clip(CircleShape)
-                    .background(LoupeColors.Warm),
+                    .background(ordinalColor(burst.lastIndex, config)),
             )
             Spacer(Modifier.width(8.dp))
             val label = when {
@@ -270,38 +196,54 @@ private fun BurstRow(
                 else -> "recompositions ${burst.firstIndex}–${burst.lastIndex} · ${burst.count}x"
             }
             Text(
-                text = "${ago(burst.records.first().timestampNs)}  $label",
+                text = "${ago(burst.records.first().timestampNs, referenceNs)}  $label",
                 color = LoupeColors.OnSurface,
-                fontSize = 11.sp,
+                fontSize = 12.sp,
                 fontFamily = FontFamily.Monospace,
                 modifier = Modifier.weight(1f),
             )
+            val stateNames = burst.changedStateNames
+            when {
+                stateNames.isNotEmpty() -> {
+                    Chip("state", LoupeColors.VerdictUnstable)
+                    Spacer(Modifier.width(6.dp))
+                    Text(
+                        text = stateNames.joinToString(", "),
+                        color = LoupeColors.VerdictUnstable,
+                        fontSize = 11.sp,
+                        fontFamily = FontFamily.Monospace,
+                        maxLines = 1,
+                    )
+                }
+                burst.records.isNotEmpty() && burst.records.all { it.wasForced } -> {
+                    Chip("state / parent", LoupeColors.Warm)
+                    Spacer(Modifier.width(6.dp))
+                }
+            }
             burst.dominantChangedParam?.let {
                 Text(
                     text = it,
-                    color = LoupeColors.Warm,
-                    fontSize = 10.sp,
+                    color = verdictColor(burst.dominantChangedVerdict),
+                    fontSize = 11.sp,
                     fontFamily = FontFamily.Monospace,
                 )
             }
-            // #25: forced recompositions (body ran with all params unchanged) are
-            // a distinct class of problem — disambiguate from param-driven churn
-            if (burst.records.isNotEmpty() && burst.records.all { it.wasForced }) {
-                Spacer(Modifier.width(6.dp))
-                Chip("forced", LoupeColors.Warm)
-            }
         }
         if (expanded) {
-            if (burst.records.any { it.wasForced }) {
+            if (burst.changedStateNames.isEmpty() &&
+                burst.records.any { it.wasForced }
+            ) {
                 SuggestionRow(
-                    "recomposed despite no parameter changes. " +
-                        "Its parent may be non-restartable or calling invalidate() directly."
+                    "No parameter changed, but it recomposed — the trigger is something Loupe " +
+                        "does not track as a parameter: internal state (e.g. `counter++` on a " +
+                        "`remember { mutableStateOf() }`), a non-restartable parent, or " +
+                        "`invalidate()`."
                 )
             }
             burst.records.forEach { record ->
-                record.params.forEach { param ->
-                    ParamRow(param)
-                }
+                // Only surface what actually changed; unchanged rows are noise.
+                record.stateChanges.filterNot { it.verdict is ParamVerdict.Unchanged }.forEach { StateRow(it) }
+                record.params.filterNot { it.verdict is ParamVerdict.Unchanged }.forEach { ParamRow(it) }
             }
         }
     }
@@ -309,57 +251,102 @@ private fun BurstRow(
 
 @Composable
 private fun ParamRow(param: ParamSnapshot) {
-    Column(modifier = Modifier.padding(start = 14.dp, top = 2.dp)) {
+    Column(modifier = Modifier.padding(start = 15.dp, top = 3.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(
                 text = param.name,
                 color = LoupeColors.OnSurface,
-                fontSize = 10.sp,
+                fontSize = 11.sp,
                 fontFamily = FontFamily.Monospace,
-                modifier = Modifier.width(90.dp),
+                modifier = Modifier.width(96.dp),
                 maxLines = 1,
             )
-            val valueText = when (param.verdict) {
-                is ParamVerdict.FirstComposition -> param.currentValue
-                is ParamVerdict.Unchanged -> "unchanged"
-                else -> "${param.previousValue} → ${param.currentValue}"
-            }
-            Text(
-                text = valueText,
-                color = LoupeColors.OnSurface.copy(alpha = 0.6f),
-                fontSize = 10.sp,
-                fontFamily = FontFamily.Monospace,
-                modifier = Modifier.weight(1f),
-                maxLines = 1,
-            )
+            Spacer(Modifier.weight(1f))
             VerdictChip(param)
+        }
+        // Show values on separate lines for clarity when there's a change
+        when (param.verdict) {
+            is ParamVerdict.FirstComposition -> {
+                ValueLine(prefix = null, value = param.currentValue)
+            }
+            is ParamVerdict.Unchanged -> {}
+            else -> {
+                ValueLine(prefix = "was", value = param.previousValue, color = LoupeColors.OnSurfaceVariant)
+                ValueLine(prefix = "now", value = param.currentValue, color = verdictColor(param.verdict))
+            }
         }
         param.suggestion?.let { SuggestionRow(it) }
     }
 }
 
 @Composable
-private fun SuggestionRow(suggestion: String) {
-    var expanded by remember { mutableStateOf(false) }
-    Column(
-        modifier = Modifier
-            .clickable { expanded = !expanded }
-            .padding(vertical = 2.dp),
-    ) {
+private fun ValueLine(prefix: String?, value: String, color: Color = LoupeColors.OnSurfaceVariant) {
+    Row(modifier = Modifier.padding(start = 8.dp, top = 2.dp)) {
+        if (prefix != null) {
+            Text(
+                text = "$prefix: ",
+                color = LoupeColors.OnSurfaceVariant,
+                fontSize = 10.sp,
+                fontFamily = FontFamily.Monospace,
+            )
+        }
         Text(
-            text = "💡 $suggestion",
-            color = LoupeColors.Warm,
-            fontSize = 9.sp,
-            maxLines = if (expanded) Int.MAX_VALUE else 1,
+            text = value,
+            color = color,
+            fontSize = 10.sp,
+            fontFamily = FontFamily.Monospace,
+            maxLines = 2,
         )
     }
 }
 
-/**
- * Verdict tag chips (CLAUDE.md vocabulary). Colour encodes verdict type, never rank.
- * "changed" (red, no suggestion) marks a genuine value change that drove this
- * recomposition; "MutableList"/"unstable" mark recognised unstable types.
- */
+@Composable
+private fun StateRow(state: ParamSnapshot) {
+    Column(modifier = Modifier.padding(start = 15.dp, top = 3.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                text = state.name,
+                color = LoupeColors.OnSurface,
+                fontSize = 11.sp,
+                fontFamily = FontFamily.Monospace,
+                modifier = Modifier.width(96.dp),
+                maxLines = 1,
+            )
+            Spacer(Modifier.weight(1f))
+            val (chipLabel, chipColor) = when (state.verdict) {
+                is ParamVerdict.Changed -> "state" to LoupeColors.VerdictUnstable
+                is ParamVerdict.LambdaIdentity -> "state" to LoupeColors.VerdictLambda
+                else -> "unchanged" to LoupeColors.VerdictUnchanged
+            }
+            Chip(chipLabel, chipColor)
+        }
+        when (state.verdict) {
+            is ParamVerdict.FirstComposition -> {
+                ValueLine(prefix = null, value = state.currentValue)
+            }
+            is ParamVerdict.Unchanged -> {}
+            else -> {
+                ValueLine(prefix = "was", value = state.previousValue, color = LoupeColors.OnSurfaceVariant)
+                ValueLine(prefix = "now", value = state.currentValue, color = verdictColor(state.verdict))
+            }
+        }
+    }
+}
+
+@Composable
+private fun SuggestionRow(suggestion: String) {
+    var expanded by remember { mutableStateOf(false) }
+    Text(
+        text = "💡 $suggestion",
+        color = LoupeColors.Warm,
+        fontSize = 10.sp,
+        maxLines = if (expanded) Int.MAX_VALUE else 1,
+        modifier = Modifier
+            .clickable { expanded = !expanded }
+            .padding(vertical = 2.dp),
+    )
+}
+
 @Composable
 private fun VerdictChip(param: ParamSnapshot) {
     val (label, color) = when (param.verdict) {
@@ -379,6 +366,7 @@ private fun VerdictChip(param: ParamSnapshot) {
 private fun BlameChip(param: BlamedParam) {
     val (label, color) = when {
         param.recompositionCount == 0 -> "stable" to LoupeColors.Healthy
+        param.isState -> "state" to LoupeColors.VerdictUnstable
         param.dominantVerdict is ParamVerdict.LambdaIdentity -> "lambda" to LoupeColors.VerdictLambda
         param.suggestion != null -> "unstable" to LoupeColors.VerdictUnstable
         else -> "changed" to LoupeColors.VerdictUnstable
@@ -391,46 +379,46 @@ private fun Chip(label: String, color: Color) {
     Box(
         modifier = Modifier
             .clip(RoundedCornerShape(4.dp))
-            .background(color.copy(alpha = 0.25f))
-            .padding(horizontal = 5.dp, vertical = 1.dp),
+            .background(color.copy(alpha = 0.16f))
+            .padding(horizontal = 6.dp, vertical = 2.dp),
     ) {
-        Text(text = label, color = color, fontSize = 8.sp, fontWeight = FontWeight.SemiBold)
+        Text(text = label, color = color, fontSize = 9.sp, fontWeight = FontWeight.SemiBold)
     }
 }
 
-// ── Blame bar (#17): width = contribution rank, colour = verdict type ───────
+// ── Blame bar: width = contribution rank, colour = verdict type ─────────────
 
 @Composable
 private fun BlameBar(blamedParams: List<BlamedParam>) {
     val max = blamedParams.maxOfOrNull { it.recompositionCount }?.coerceAtLeast(1) ?: 1
-    Column(modifier = Modifier.padding(horizontal = 14.dp, vertical = 4.dp)) {
+    Column {
         blamedParams.forEach { param ->
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(vertical = 2.dp),
+                    .padding(vertical = 3.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text(
                     text = param.name,
                     color = LoupeColors.OnSurface,
-                    fontSize = 10.sp,
+                    fontSize = 11.sp,
                     fontFamily = FontFamily.Monospace,
-                    modifier = Modifier.width(90.dp),
+                    modifier = Modifier.width(96.dp),
                     maxLines = 1,
                 )
                 Box(
                     modifier = Modifier
                         .weight(1f)
-                        .height(6.dp)
-                        .clip(RoundedCornerShape(3.dp))
+                        .height(7.dp)
+                        .clip(RoundedCornerShape(4.dp))
                         .background(LoupeColors.Divider),
                 ) {
                     val fraction = param.recompositionCount.toFloat() / max
-                    val color = when {
-                        param.recompositionCount == 0 -> LoupeColors.VerdictUnchanged
-                        param.dominantVerdict is ParamVerdict.LambdaIdentity -> LoupeColors.VerdictLambda
-                        else -> LoupeColors.VerdictUnstable
+                    val color = if (param.recompositionCount == 0) {
+                        LoupeColors.VerdictUnchanged
+                    } else {
+                        verdictColor(param.dominantVerdict)
                     }
                     Box(
                         modifier = Modifier
@@ -439,20 +427,93 @@ private fun BlameBar(blamedParams: List<BlamedParam>) {
                             .background(color),
                     )
                 }
-                Spacer(Modifier.width(6.dp))
+                Spacer(Modifier.width(8.dp))
                 Text(
                     text = "${param.recompositionCount}x",
-                    color = LoupeColors.OnSurface.copy(alpha = 0.7f),
-                    fontSize = 10.sp,
+                    color = LoupeColors.OnSurfaceVariant,
+                    fontSize = 11.sp,
                 )
-                Spacer(Modifier.width(6.dp))
+                Spacer(Modifier.width(8.dp))
                 BlameChip(param)
             }
         }
     }
 }
 
-private fun ago(timestampNs: Long): String {
-    val elapsedNs = (System.nanoTime() - timestampNs).coerceAtLeast(0)
-    return "%.1fs".format(elapsedNs / 1_000_000_000.0)
+// ── Export (#19) ─────────────────────────────────────────────────────────────
+
+@Composable
+private fun ExportButtons(history: RecompositionHistory) {
+    val context = LocalContext.current
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(top = 12.dp),
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        PanelButton(label = "Share report", modifier = Modifier.weight(1f)) {
+            val json = JsonExporter.historyToJson(history)
+            val send = Intent(Intent.ACTION_SEND).apply {
+                type = "application/json"
+                putExtra(Intent.EXTRA_TEXT, json)
+                putExtra(Intent.EXTRA_SUBJECT, "Loupe report — ${history.key}")
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            context.startActivity(
+                Intent.createChooser(send, "Share Loupe report")
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+            )
+        }
+        PanelButton(label = "Copy JSON", modifier = Modifier.weight(1f)) {
+            val json = JsonExporter.historyToJson(history)
+            val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+            clipboard.setPrimaryClip(ClipData.newPlainText("Loupe report — ${history.key}", json))
+        }
+    }
+}
+
+@Composable
+private fun PanelButton(label: String, modifier: Modifier = Modifier, onClick: () -> Unit) {
+    Box(
+        modifier = modifier
+            .clip(RoundedCornerShape(10.dp))
+            .background(LoupeColors.SurfaceRaised)
+            .border(1.dp, LoupeColors.Outline, RoundedCornerShape(10.dp))
+            .clickable(onClick = onClick)
+            .padding(vertical = 11.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            text = label,
+            color = LoupeColors.OnSurface,
+            fontSize = 12.sp,
+            fontWeight = FontWeight.Medium,
+        )
+    }
+}
+
+private fun ago(timestampNs: Long, referenceNs: Long): String {
+    val elapsedNs = (referenceNs - timestampNs).coerceAtLeast(0)
+    return "%.1fs".format(java.util.Locale.US, elapsedNs / 1_000_000_000.0)
+}
+
+/**
+ * Timeline severity by recomposition ordinal:
+ * 1 (initial composition) green · warmThreshold..hotThreshold amber · ≥ hotThreshold red.
+ */
+private fun ordinalColor(ordinal: Int, config: LoupeConfig): Color = when {
+    ordinal <= 1 -> LoupeColors.Healthy
+    ordinal >= config.hotThreshold -> LoupeColors.Hot
+    ordinal >= config.warmThreshold -> LoupeColors.Warm
+    else -> LoupeColors.Healthy
+}
+
+/**
+ * Verdict colour grammar — one source of truth so a changed value is always the
+ * same colour, whether it is a parameter or local state (CLAUDE.md visual design).
+ */
+private fun verdictColor(verdict: ParamVerdict): Color = when (verdict) {
+    is ParamVerdict.LambdaIdentity -> LoupeColors.VerdictLambda
+    is ParamVerdict.Changed -> LoupeColors.VerdictUnstable
+    else -> LoupeColors.VerdictUnchanged
 }

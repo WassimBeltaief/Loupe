@@ -1,30 +1,32 @@
 package com.wassimbeltaief.loupe.runtime.overlay
 
-import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -32,204 +34,249 @@ import androidx.compose.ui.unit.sp
 import com.wassimbeltaief.loupe.runtime.LoupeConfig
 import com.wassimbeltaief.loupe.runtime.model.RecompositionHistory
 
-private val ColorHot = LoupeColors.Hot
-private val ColorWarm = LoupeColors.Warm
-private val ColorHealthy = LoupeColors.Healthy
-private val ColorSurface = LoupeColors.Surface
-private val ColorOnSurface = LoupeColors.OnSurface
-private val ColorDivider = LoupeColors.Divider
-
+/**
+ * Composables list sheet — full width, up to 33% of the screen (window-sized by
+ * the manager), scrollable with a scrollbar. Tapping a row opens the fullscreen
+ * detail.
+ */
 @Composable
 internal fun OverlayListPanel(
-    composables: Map<String, RecompositionHistory>,
+    instances: List<RecompositionHistory>,
     config: LoupeConfig,
-    onPause: () -> Unit,
-    onDismiss: () -> Unit,
-    onInspect: (RecompositionHistory) -> Unit,
+    isPaused: Boolean,
+    onTogglePause: () -> Unit,
+    onCollapse: () -> Unit,
+    onSelect: (RecompositionHistory) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val ranked = composables.values
-        .sortedByDescending { it.windowRecompositions }
-        .take(6)
-    val maxWindow = ranked.firstOrNull()?.windowRecompositions?.coerceAtLeast(1) ?: 1
-    // Session-scoped: once dismissed, the hint does not reappear
-    var hintVisible by remember { mutableStateOf(true) }
+    val listState = rememberLazyListState()
+
+    // Deterministic order: hottest first, then a stable id tie-break so #n labels
+    // don't shuffle between updates.
+    val ranked = instances
+        .sortedWith(
+            compareByDescending<RecompositionHistory> { it.totalRecompositions }
+                .thenBy { it.instanceId }
+        )
+    val labels = ranked.groupBy { it.key }.let { byKey ->
+        ranked.associate { history ->
+            val group = byKey.getValue(history.key)
+                .sortedByDescending { it.totalRecompositions }
+            val short = history.key.substringAfterLast('.')
+            history.instanceId to if (group.size > 1) {
+                "$short #${group.indexOf(history) + 1}"
+            } else {
+                short
+            }
+        }
+    }
+    val maxCount = ranked.firstOrNull()?.totalRecompositions?.coerceAtLeast(1) ?: 1
 
     Column(
         modifier = modifier
-            .width(280.dp)
-            .clip(RoundedCornerShape(10.dp))
-            .background(ColorSurface)
-            .padding(bottom = 6.dp),
+            .fillMaxSize()
+            .padding(LoupeSheetInset)
+            .loupeSheetSurface(),
     ) {
         // Header
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .background(ColorDivider)
-                .padding(horizontal = 10.dp, vertical = 6.dp),
+                .padding(start = 16.dp, end = 8.dp, top = 10.dp, bottom = 6.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
                 text = "Loupe",
-                color = ColorOnSurface,
-                fontSize = 12.sp,
-                fontWeight = FontWeight.SemiBold,
-                modifier = Modifier.weight(1f),
-            )
-            Text(
-                text = "${config.windowSeconds}s · ${composables.size} tracked",
-                color = ColorOnSurface.copy(alpha = 0.6f),
-                fontSize = 10.sp,
+                color = LoupeColors.OnSurface,
+                fontSize = 15.sp,
+                fontWeight = FontWeight.Bold,
             )
             Spacer(Modifier.width(8.dp))
             Text(
-                text = "⏸",
-                color = ColorOnSurface,
-                fontSize = 12.sp,
-                modifier = Modifier
-                    .clip(CircleShape)
-                    .clickable(onClick = onPause)
-                    .padding(horizontal = 4.dp),
+                text = "${instances.size} tracked",
+                color = LoupeColors.OnSurfaceVariant,
+                fontSize = 11.sp,
+                modifier = Modifier.weight(1f),
             )
-            Text(
-                text = "✕",
-                color = ColorOnSurface,
-                fontSize = 12.sp,
-                modifier = Modifier
-                    .clip(CircleShape)
-                    .clickable(onClick = onDismiss)
-                    .padding(horizontal = 4.dp),
+            // Toggle: green ▶ when paused, yellow ⏸ while recording
+            IconButton(
+                glyph = if (isPaused) "▶" else "⏸",
+                color = if (isPaused) LoupeColors.Healthy else LoupeColors.Warm,
+                onClick = onTogglePause,
             )
+            IconButton(glyph = "⌄", onClick = onCollapse)
         }
 
-        Spacer(Modifier.height(4.dp))
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(1.dp)
+                .background(LoupeColors.Divider),
+        )
 
         if (ranked.isEmpty()) {
             Text(
                 text = "No composables recorded yet",
-                color = ColorOnSurface.copy(alpha = 0.5f),
-                fontSize = 10.sp,
-                modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+                color = LoupeColors.OnSurfaceVariant,
+                fontSize = 12.sp,
+                modifier = Modifier.padding(16.dp),
             )
         } else {
-            ranked.forEach { history ->
-                ComposableRow(
-                    history = history,
-                    maxWindow = maxWindow,
-                    config = config,
-                    onInspect = { onInspect(history) },
-                )
-            }
-        }
-
-        // Hint strip — dismissible, does not reappear once closed
-        if (hintVisible) {
-            Spacer(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(1.dp)
-                    .background(ColorDivider),
-            )
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text(
-                    text = "long-press any row to inspect history",
-                    color = ColorOnSurface.copy(alpha = 0.4f),
-                    fontSize = 9.sp,
+            Box(modifier = Modifier.fillMaxSize()) {
+                LazyColumn(
+                    state = listState,
                     modifier = Modifier
-                        .weight(1f)
-                        .padding(horizontal = 10.dp, vertical = 4.dp),
-                )
-                Text(
-                    text = "✕",
-                    color = ColorOnSurface.copy(alpha = 0.4f),
-                    fontSize = 9.sp,
+                        .fillMaxSize()
+                        .padding(end = 8.dp),
+                ) {
+                    items(items = ranked, key = { it.instanceId }) { history ->
+                        ComposableRow(
+                            label = labels[history.instanceId]
+                                ?: history.key.substringAfterLast('.'),
+                            history = history,
+                            maxCount = maxCount,
+                            config = config,
+                            onClick = { onSelect(history) },
+                        )
+                    }
+                }
+                Scrollbar(
+                    state = listState,
                     modifier = Modifier
-                        .clickable { hintVisible = false }
-                        .padding(horizontal = 10.dp, vertical = 4.dp),
+                        .align(Alignment.TopEnd)
+                        .padding(top = 4.dp, bottom = 4.dp, end = 3.dp),
                 )
             }
         }
     }
 }
 
-@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun ComposableRow(
+    label: String,
     history: RecompositionHistory,
-    maxWindow: Int,
+    maxCount: Int,
     config: LoupeConfig,
-    onInspect: () -> Unit,
+    onClick: () -> Unit,
 ) {
     val color = when {
-        history.windowRecompositions >= config.hotThreshold -> ColorHot
-        history.windowRecompositions >= config.warmThreshold -> ColorWarm
-        else -> ColorHealthy
+        history.totalRecompositions >= config.hotThreshold -> LoupeColors.Hot
+        history.totalRecompositions >= config.warmThreshold -> LoupeColors.Warm
+        else -> LoupeColors.Healthy
     }
-    val barFraction = history.windowRecompositions.toFloat() / maxWindow
+    val barFraction = history.totalRecompositions.toFloat() / maxCount
 
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            // Tap or long-press opens the drill-down (#16/#18)
-            .combinedClickable(onClick = onInspect, onLongClick = onInspect)
-            .padding(horizontal = 10.dp, vertical = 3.dp),
+            .clickable(onClick = onClick)
+            .padding(horizontal = 16.dp, vertical = 7.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        // Severity dot
         Box(
             modifier = Modifier
-                .size(7.dp)
+                .size(8.dp)
                 .clip(CircleShape)
                 .background(color),
         )
-        Spacer(Modifier.width(6.dp))
-
-        // Name — show the composable's short name only. Keys are qualified as
-        // File.Function (#37); in the narrow panel the file prefix truncates both
-        // rows to read identically. The drill-down still shows the full key.
+        Spacer(Modifier.width(10.dp))
         Text(
-            text = history.key.substringAfterLast('.'),
-            color = ColorOnSurface,
-            fontSize = 11.sp,
+            text = label,
+            color = LoupeColors.OnSurface,
+            fontSize = 13.sp,
             fontFamily = FontFamily.Monospace,
             modifier = Modifier.weight(1f),
             maxLines = 1,
         )
-        Spacer(Modifier.width(6.dp))
-
-        // Proportional bar
+        Spacer(Modifier.width(8.dp))
         Box(
             modifier = Modifier
-                .width(60.dp)
-                .height(3.dp)
+                .width(70.dp)
+                .height(4.dp)
                 .clip(RoundedCornerShape(2.dp))
-                .background(ColorDivider),
+                .background(LoupeColors.Divider),
         ) {
             Box(
                 modifier = Modifier
                     .fillMaxWidth(barFraction)
-                    .height(3.dp)
+                    .height(4.dp)
                     .background(color),
             )
         }
-        Spacer(Modifier.width(6.dp))
-
-        // Count + cost
+        Spacer(Modifier.width(8.dp))
         Text(
-            text = "${history.windowRecompositions}x",
+            text = "${history.totalRecompositions}x",
             color = color,
-            fontSize = 10.sp,
+            fontSize = 11.sp,
             fontWeight = FontWeight.Medium,
         )
-        Spacer(Modifier.width(4.dp))
+        Spacer(Modifier.width(6.dp))
         Text(
             text = "${"%.1f".format(java.util.Locale.US, history.totalDurationMs)}ms",
-            color = ColorOnSurface.copy(alpha = 0.5f),
-            fontSize = 10.sp,
+            color = LoupeColors.OnSurfaceVariant,
+            fontSize = 11.sp,
         )
+    }
+}
+
+@Composable
+private fun IconButton(
+    glyph: String,
+    color: androidx.compose.ui.graphics.Color = LoupeColors.OnSurface,
+    onClick: () -> Unit,
+) {
+    Box(
+        modifier = Modifier
+            .clip(CircleShape)
+            .clickable(onClick = onClick)
+            .padding(horizontal = 10.dp, vertical = 6.dp),
+    ) {
+        Text(text = glyph, color = color, fontSize = 15.sp)
+    }
+}
+
+/**
+ * Minimal scrollbar: thumb size/offset approximate from the visible item window.
+ * Only shown when there is something to scroll.
+ */
+@Composable
+private fun Scrollbar(
+    state: LazyListState,
+    modifier: Modifier = Modifier,
+) {
+    val layoutInfo = state.layoutInfo
+    val total = layoutInfo.totalItemsCount
+    val visible = layoutInfo.visibleItemsInfo.size
+    if (total == 0 || total <= visible) return
+
+    BoxWithConstraints(
+        modifier = modifier
+            .width(3.dp)
+            .fillMaxHeight(),
+    ) {
+        val trackPx = constraints.maxHeight.toFloat()
+        val thumbFraction = (visible.toFloat() / total).coerceIn(0.15f, 1f)
+        val thumbPx = trackPx * thumbFraction
+        val maxScrollFraction = (total - visible).toFloat().coerceAtLeast(1f)
+        val scrollFraction = (state.firstVisibleItemIndex / maxScrollFraction).coerceIn(0f, 1f)
+        val offsetPx = (trackPx - thumbPx) * scrollFraction
+
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .clip(RoundedCornerShape(2.dp))
+                .background(LoupeColors.Divider),
+        ) {
+            Box(
+                modifier = Modifier
+                    .offset(y = with(androidx.compose.ui.platform.LocalDensity.current) { offsetPx.toDp() })
+                    .fillMaxWidth()
+                    .height(
+                        with(androidx.compose.ui.platform.LocalDensity.current) { thumbPx.toDp() },
+                    )
+                    .clip(RoundedCornerShape(2.dp))
+                    .background(LoupeColors.OnSurfaceVariant),
+            )
+        }
     }
 }

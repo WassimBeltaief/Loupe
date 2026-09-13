@@ -155,4 +155,115 @@ class RecompositionRegistryTest {
         assertEquals(2, history.totalRecompositions)
         assertEquals(1.0f, history.totalDurationMs, 0.001f, "only the ended record contributes")
     }
+
+    // ── per-instance tracking ────────────────────────────────────────────────
+
+    @Test
+    fun `same composable in two instances gets two histories and one aggregate`() {
+        val reg = registry()
+        reg.record("Card", "Card.kt", 1, arrayOf("n" to 1), instance = 100)
+        reg.record("Card", "Card.kt", 1, arrayOf("n" to 1), instance = 200)
+
+        val instances = reg.instances.value
+        assertEquals(2, instances.size)
+        assertTrue(instances.all { it.key == "Card" })
+        assertEquals(2, instances.map { it.instanceId }.distinct().size)
+        assertTrue(instances.all { it.totalRecompositions == 1 }, "each instance counts its own recompositions")
+
+        // Aggregate still combines them for the heatmap / CI report
+        assertEquals(2, reg.snapshot()["Card"]!!.totalRecompositions)
+    }
+
+    @Test
+    fun `recordEnd updates the matching instance only`() {
+        var now = 1_000_000_000L
+        val reg = registry(time = { now })
+        reg.record("Card", "Card.kt", 1, arrayOf("n" to 1), instance = 7)
+        reg.record("Card", "Card.kt", 1, arrayOf("n" to 1), instance = 9)
+        now += 3_000_000L
+        reg.recordEnd("Card", instance = 7)
+
+        val instances = reg.instances.value.associateBy { it.instanceId }
+        assertEquals(3_000_000L, instances.getValue("Card#7").records[0].durationNs)
+        assertEquals(RecompositionRegistry.DURATION_UNSET, instances.getValue("Card#9").records[0].durationNs)
+    }
+
+    @Test
+    fun `reset clears per-instance histories`() {
+        val reg = registry()
+        reg.record("Card", "Card.kt", 1, arrayOf("n" to 1), instance = 1)
+        assertTrue(reg.instances.value.isNotEmpty())
+        reg.reset()
+        assertTrue(reg.instances.value.isEmpty())
+    }
+
+    @Test
+    fun `instances keep independent totals including the initial composition`() {
+        val reg = registry()
+        reg.record("Card", "Card.kt", 1, arrayOf("n" to 1), instance = 1)   // initial
+        repeat(2) { reg.record("Card", "Card.kt", 1, arrayOf("n" to it), instance = 1) }
+        reg.record("Card", "Card.kt", 1, arrayOf("n" to 1), instance = 2)   // initial only
+
+        val byId = reg.instances.value.associateBy { it.instanceId }
+        assertEquals(3, byId.getValue("Card#1").totalRecompositions)
+        assertEquals(1, byId.getValue("Card#2").totalRecompositions)
+    }
+
+    // ── local state tracking ─────────────────────────────────────────────────
+
+    @Test
+    fun `trackState marks first composition then a changed value`() {
+        val reg = registry()
+        reg.record("Card", "Card.kt", 1, emptyArray())
+        reg.trackState("Card", name = "counter", value = 0)
+        reg.record("Card", "Card.kt", 1, emptyArray())
+        reg.trackState("Card", name = "counter", value = 1)
+
+        val records = reg.snapshot()["Card"]!!.records
+        assertEquals(ParamVerdict.FirstComposition, records[1].stateChanges.single().verdict)
+        assertEquals(ParamVerdict.Changed, records[0].stateChanges.single().verdict)
+        assertEquals("0", records[0].stateChanges.single().previousValue)
+        assertEquals("1", records[0].stateChanges.single().currentValue)
+    }
+
+    @Test
+    fun `trackState marks unchanged value on recomposition`() {
+        val reg = registry()
+        reg.record("Card", "Card.kt", 1, emptyArray())
+        reg.trackState("Card", name = "counter", value = 5)
+        reg.record("Card", "Card.kt", 1, emptyArray())
+        reg.trackState("Card", name = "counter", value = 5)
+
+        val latest = reg.snapshot()["Card"]!!.records.first()
+        assertEquals(ParamVerdict.Unchanged, latest.stateChanges.single().verdict)
+    }
+
+    @Test
+    fun `trackState updates the matching instance only`() {
+        val reg = registry()
+        reg.record("Card", "Card.kt", 1, emptyArray(), instance = 7)
+        reg.trackState("Card", instance = 7, name = "counter", value = 1)
+        reg.record("Card", "Card.kt", 1, emptyArray(), instance = 9)
+
+        val byId = reg.instances.value.associateBy { it.instanceId }
+        assertEquals(1, byId.getValue("Card#7").records.first().stateChanges.size)
+        assertTrue(byId.getValue("Card#9").records.first().stateChanges.isEmpty())
+    }
+
+    @Test
+    fun `blame includes changed local state and keeps stable params`() {
+        val reg = registry()
+        reg.record("Card", "Card.kt", 1, arrayOf("title" to "x"))
+        reg.trackState("Card", name = "counter", value = 0)
+        repeat(2) { i ->
+            reg.record("Card", "Card.kt", 1, arrayOf("title" to "x"))
+            reg.trackState("Card", name = "counter", value = i + 1)
+        }
+
+        val blame = reg.snapshot()["Card"]!!.blamedParams
+        val counter = blame.first { it.name == "counter" }
+        assertEquals(2, counter.recompositionCount)
+        assertTrue(counter.isState)
+        assertTrue(blame.any { it.name == "title" && it.recompositionCount == 0 })
+    }
 }

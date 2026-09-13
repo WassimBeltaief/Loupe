@@ -3,6 +3,7 @@ package com.wassimbeltaief.loupe.runtime.registry
 import com.wassimbeltaief.loupe.runtime.analysis.ParamDiffer
 import com.wassimbeltaief.loupe.runtime.analysis.SuggestionEngine
 import com.wassimbeltaief.loupe.runtime.model.BlamedParam
+import com.wassimbeltaief.loupe.runtime.model.ParamSnapshot
 import com.wassimbeltaief.loupe.runtime.model.ParamVerdict
 import com.wassimbeltaief.loupe.runtime.model.RecompositionHistory
 import com.wassimbeltaief.loupe.runtime.model.RecompositionRecord
@@ -11,6 +12,16 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import java.util.concurrent.ConcurrentHashMap
 
+/**
+ * In-memory store for recomposition events.
+ *
+ * Two views are maintained:
+ * - **[state]**: aggregated per composable function (key = `File.Function`) — used by
+ *   the heatmap and the CI report, where one row per composable is the right unit.
+ * - **[instances]**: one history per *instance* (key + compose compound-key hash) —
+ *   used by the overlay list so four `ScenarioCard`s show as four rows with their own
+ *   counts.
+ */
 class RecompositionRegistry(
     private val maxHistoryEntries: Int = 500,
     private val windowNs: Long = 5_000_000_000L,
@@ -19,52 +30,90 @@ class RecompositionRegistry(
     companion object {
         /** Sentinel for "recordEnd not yet received" — never a valid measured duration. */
         const val DURATION_UNSET = -1L
+
+        internal fun instanceId(key: String, instance: Int): String = "$key#$instance"
     }
 
     private data class Entry(
         val records: ArrayDeque<RecompositionRecord> = ArrayDeque(),
         val previousParams: MutableMap<String, Any?> = mutableMapOf(),
+        val previousStates: MutableMap<String, Any?> = mutableMapOf(),
         var file: String = "",
         var line: Int = 0,
+        var key: String = "",
+        var instanceId: String = "",
     )
 
+    /** Aggregate per composable key. */
     private val entries = ConcurrentHashMap<String, Entry>()
+
+    /** Per-instance records, keyed by `key#instanceHash`. */
+    private val instanceEntries = ConcurrentHashMap<String, Entry>()
 
     private val _state = MutableStateFlow<Map<String, RecompositionHistory>>(emptyMap())
     val state: StateFlow<Map<String, RecompositionHistory>> = _state.asStateFlow()
 
-    fun record(key: String, file: String, line: Int, params: Array<Pair<String, Any?>>): RecompositionRecord {
-        val entry = entries.getOrPut(key) { Entry() }
-        val created: RecompositionRecord = synchronized(entry) {
-            entry.file = file
-            entry.line = line
+    private val _instances = MutableStateFlow<List<RecompositionHistory>>(emptyList())
+    val instances: StateFlow<List<RecompositionHistory>> = _instances.asStateFlow()
 
-            val snapshots = ParamDiffer.diff(entry.previousParams, params)
-            entry.previousParams.clear()
-            params.forEach { (name, value) -> entry.previousParams[name] = value }
-
-            val wasForced = entry.records.isNotEmpty() &&
-                snapshots.isNotEmpty() &&
-                snapshots.all { it.verdict == ParamVerdict.Unchanged }
-
-            val record = RecompositionRecord(
-                key = key,
-                file = file,
-                line = line,
-                timestampNs = timeSource(),
-                params = snapshots,
-                durationNs = DURATION_UNSET,
-                wasForced = wasForced,
-            )
-
-            entry.records.addFirst(record)
-            while (entry.records.size > maxHistoryEntries) {
-                entry.records.removeLast()
-            }
-            record
+    fun record(
+        key: String,
+        file: String,
+        line: Int,
+        params: Array<Pair<String, Any?>>,
+        instance: Int = 0,
+    ): RecompositionRecord {
+        val aggregate = entries.getOrPut(key) { Entry() }.also {
+            it.key = key
+            it.instanceId = key
         }
+        val id = instanceId(key, instance)
+        val perInstance = instanceEntries.getOrPut(id) { Entry() }.also {
+            it.key = key
+            it.instanceId = id
+        }
+
+        val created = synchronized(aggregate) { applyRecord(aggregate, key, file, line, params) }
+        synchronized(perInstance) { applyRecord(perInstance, key, file, line, params) }
+
         _state.value = snapshot()
+        _instances.value = instancesSnapshot()
         return created
+    }
+
+    private fun applyRecord(
+        entry: Entry,
+        key: String,
+        file: String,
+        line: Int,
+        params: Array<Pair<String, Any?>>,
+    ): RecompositionRecord {
+        entry.file = file
+        entry.line = line
+
+        val snapshots = ParamDiffer.diff(entry.previousParams, params)
+        entry.previousParams.clear()
+        params.forEach { (name, value) -> entry.previousParams[name] = value }
+
+        val wasForced = entry.records.isNotEmpty() &&
+            snapshots.isNotEmpty() &&
+            snapshots.all { it.verdict == ParamVerdict.Unchanged }
+
+        val record = RecompositionRecord(
+            key = key,
+            file = file,
+            line = line,
+            timestampNs = timeSource(),
+            params = snapshots,
+            durationNs = DURATION_UNSET,
+            wasForced = wasForced,
+        )
+
+        entry.records.addFirst(record)
+        while (entry.records.size > maxHistoryEntries) {
+            entry.records.removeLast()
+        }
+        return record
     }
 
     /**
@@ -73,8 +122,15 @@ class RecompositionRegistry(
      * LIFO pairing keeps recursive composables correct. No-op if no record matches
      * (e.g. reset() or configure() happened mid-composition).
      */
-    fun recordEnd(key: String, endNs: Long = timeSource()) {
-        val entry = entries[key] ?: return
+    fun recordEnd(key: String, instance: Int = 0, endNs: Long = timeSource()) {
+        finish(entries[key], endNs)
+        finish(instanceEntries[instanceId(key, instance)], endNs)
+        _state.value = snapshot()
+        _instances.value = instancesSnapshot()
+    }
+
+    private fun finish(entry: Entry?, endNs: Long) {
+        if (entry == null) return
         synchronized(entry) {
             val index = entry.records.indexOfFirst { it.durationNs == DURATION_UNSET }
             if (index >= 0) {
@@ -82,46 +138,131 @@ class RecompositionRegistry(
                 entry.records[index] = r.copy(durationNs = (endNs - r.timestampNs).coerceAtLeast(0))
             }
         }
+    }
+
+    /**
+     * Called from the compiler-injected code right after a local `MutableState` is
+     * created inside an instrumented composable. Attaches the state's value to the
+     * newest record as a [ParamSnapshot] so internal state changes (e.g. `counter++`)
+     * are visible in the drill-down instead of surfacing only as a forced recomposition.
+     */
+    fun trackState(
+        key: String,
+        instance: Int = 0,
+        name: String,
+        value: Any?,
+    ) {
+        applyState(entries[key], name, value)
+        applyState(instanceEntries[instanceId(key, instance)], name, value)
         _state.value = snapshot()
+        _instances.value = instancesSnapshot()
+    }
+
+    private fun applyState(entry: Entry?, name: String, value: Any?) {
+        if (entry == null) return
+        synchronized(entry) {
+            val index = entry.records.indexOfFirst { it.durationNs == DURATION_UNSET }
+            if (index < 0) return
+            val record = entry.records[index]
+            // A record can carry several state reads; only the first write of a name is a
+            // real transition, later reads within the same pass repeat the same value.
+            if (record.stateChanges.any { it.name == name }) return
+            val hasPrevious = entry.previousStates.containsKey(name)
+            val previous = entry.previousStates[name]
+            val verdict = when {
+                !hasPrevious -> ParamVerdict.FirstComposition
+                equalSafely(previous, value) -> ParamVerdict.Unchanged
+                else -> ParamVerdict.Changed
+            }
+            entry.previousStates[name] = value
+            entry.records[index] = record.copy(
+                stateChanges = record.stateChanges + ParamSnapshot(
+                    name = name,
+                    previousValue = if (hasPrevious) previous.toString().truncate() else "",
+                    currentValue = value.toString().truncate(),
+                    verdict = verdict,
+                    suggestion = null,
+                ),
+            )
+        }
+    }
+
+    private fun equalSafely(a: Any?, b: Any?): Boolean =
+        try {
+            a == b
+        } catch (_: Throwable) {
+            false
+        }
+
+    private fun Any?.truncate(): String {
+        val text = this?.toString() ?: return "null"
+        return if (text.length <= 120) text else text.take(117) + "..."
     }
 
     fun reset() {
         entries.clear()
+        instanceEntries.clear()
         _state.value = emptyMap()
+        _instances.value = emptyList()
     }
 
+    /**
+     * Clears history for a specific instance. Called when the instance leaves the
+     * composition (navigation away) so it starts fresh when it reappears.
+     */
+    fun clearInstance(instanceId: String) {
+        instanceEntries.remove(instanceId)
+        _instances.value = instancesSnapshot()
+    }
+
+    /** Aggregated per composable key. One entry per tracked function. */
     fun snapshot(): Map<String, RecompositionHistory> =
-        entries.mapValues { (key, entry) ->
-            synchronized(entry) {
-                val now = timeSource()
-                val windowRecompositions = entry.records.count { now - it.timestampNs <= windowNs }
-                // Records still awaiting recordEnd (durationNs == DURATION_UNSET) don't count
-                val totalDurationMs = entry.records
-                    .filter { it.durationNs >= 0 }
-                    .sumOf { it.durationNs }
-                    .toFloat() / 1_000_000f
-                RecompositionHistory(
-                    key = key,
-                    file = entry.file,
-                    line = entry.line,
-                    records = entry.records.toList(),
-                    totalRecompositions = entry.records.size,
-                    windowRecompositions = windowRecompositions,
-                    totalDurationMs = totalDurationMs,
-                    blamedParams = computeBlame(entry.records.toList()),
-                )
-            }
+        entries.mapValues { (key, entry) -> historyOf(key, key, entry) }
+
+    /** One history per on-screen instance (key + compound-key hash). */
+    fun instancesSnapshot(): List<RecompositionHistory> =
+        instanceEntries.values.map { entry -> historyOf(entry.key, entry.instanceId, entry) }
+
+    private fun historyOf(key: String, instanceId: String, entry: Entry): RecompositionHistory =
+        synchronized(entry) {
+            val now = timeSource()
+            val windowRecompositions = entry.records.count { now - it.timestampNs <= windowNs }
+            // Records still awaiting recordEnd (durationNs == DURATION_UNSET) don't count
+            val totalDurationMs = entry.records
+                .filter { it.durationNs >= 0 }
+                .sumOf { it.durationNs }
+                .toFloat() / 1_000_000f
+            RecompositionHistory(
+                key = key,
+                instanceId = instanceId,
+                file = entry.file,
+                line = entry.line,
+                records = entry.records.toList(),
+                totalRecompositions = entry.records.size,
+                windowRecompositions = windowRecompositions,
+                totalDurationMs = totalDurationMs,
+                blamedParams = computeBlame(entry.records.toList()),
+            )
         }
 
     private fun computeBlame(records: List<RecompositionRecord>): List<BlamedParam> {
         if (records.isEmpty()) return emptyList()
         val counts = mutableMapOf<String, Int>()
         val verdicts = mutableMapOf<String, ParamVerdict>()
+        val stateNames = mutableSetOf<String>()
         for (record in records) {
             for (snap in record.params) {
                 if (snap.verdict == ParamVerdict.Changed || snap.verdict == ParamVerdict.LambdaIdentity) {
                     counts[snap.name] = (counts[snap.name] ?: 0) + 1
                     verdicts[snap.name] = snap.verdict
+                }
+            }
+            // Local MutableState reads that changed also drove this recomposition.
+            for (snap in record.stateChanges) {
+                if (snap.verdict == ParamVerdict.Changed) {
+                    counts[snap.name] = (counts[snap.name] ?: 0) + 1
+                    verdicts[snap.name] = snap.verdict
+                    stateNames += snap.name
                 }
             }
         }
@@ -130,12 +271,14 @@ class RecompositionRegistry(
             .sortedByDescending { it.value }
             .map { (name, count) ->
                 val verdict = verdicts[name] ?: ParamVerdict.Changed
+                val isState = name in stateNames
                 BlamedParam(
                     name = name,
                     recompositionCount = count,
                     fraction = count / total,
                     dominantVerdict = verdict,
-                    suggestion = SuggestionEngine.forBlame(name, verdict, count, count / total),
+                    suggestion = if (isState) null else SuggestionEngine.forBlame(name, verdict, count, count / total),
+                    isState = isState,
                 )
             }
         // Spec: the blame bar also shows params that never contributed ("title · 0x stable")

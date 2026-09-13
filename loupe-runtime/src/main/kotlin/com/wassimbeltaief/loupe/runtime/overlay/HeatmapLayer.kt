@@ -1,7 +1,6 @@
 package com.wassimbeltaief.loupe.runtime.overlay
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.offset
@@ -10,10 +9,14 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.PathEffect
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Density
@@ -21,56 +24,119 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
 /**
- * #13: draws the heatmap — severity-coloured rounded borders plus a count badge
+ * #13: draws the heatmap — severity-coloured dotted borders plus a count badge
  * at each tracked composable's top-right corner. Rendered in a full-screen,
  * non-touchable overlay window, so it never intercepts app input.
+ *
+ * Badge stacking: when nested composables have badges at nearly the same
+ * position, we offset the outer (larger) box's badge diagonally (down + left)
+ * and add transparency so both remain visible.
  */
 @Composable
 internal fun HeatmapLayer(boxes: List<HeatmapBox>, modifier: Modifier = Modifier) {
     val density = LocalDensity.current
+    val badgeOffsets = remember(boxes) { computeBadgeOffsets(boxes) }
     Box(modifier = modifier.fillMaxSize()) {
         boxes.forEach { box ->
-            HeatmapEntry(box = box, density = density)
+            val offset = badgeOffsets[box]
+            HeatmapEntry(
+                box = box,
+                density = density,
+                badgeOffsetX = offset?.first ?: 0,
+                badgeOffsetY = offset?.second ?: 0,
+                badgeAlpha = if (offset != null) 0.85f else 1f,
+            )
         }
     }
 }
 
+/**
+ * Computes diagonal offsets (x, y) for badges that would otherwise overlap.
+ * Larger (outer) boxes get pushed down and left when their top-right corner
+ * is close to a smaller (inner) box's corner.
+ */
+private fun computeBadgeOffsets(boxes: List<HeatmapBox>): Map<HeatmapBox, Pair<Int, Int>> {
+    val threshold = 40 // pixels — badges within this distance need offsetting
+    val offsetStep = 24 // pixels to offset diagonally (~130% of badge size)
+    val offsets = mutableMapOf<HeatmapBox, Pair<Int, Int>>()
+
+    for (box in boxes) {
+        var level = 0
+        for (other in boxes) {
+            if (box === other) continue
+            val dx = kotlin.math.abs(box.rect.right - other.rect.right)
+            val dy = kotlin.math.abs(box.rect.top - other.rect.top)
+            if (dx <= threshold && dy <= threshold) {
+                val areaBox = box.rect.width.toLong() * box.rect.height
+                val areaOther = other.rect.width.toLong() * other.rect.height
+                if (areaBox > areaOther) {
+                    level = (level + 1).coerceAtMost(3)
+                }
+            }
+        }
+        if (level > 0) {
+            // Offset diagonally: left (negative X) and down (positive Y)
+            offsets[box] = Pair(-offsetStep * level, offsetStep * level)
+        }
+    }
+    return offsets
+}
+
 @Composable
-private fun HeatmapEntry(box: HeatmapBox, density: Density) {
+private fun HeatmapEntry(
+    box: HeatmapBox,
+    density: Density,
+    badgeOffsetX: Int = 0,
+    badgeOffsetY: Int = 0,
+    badgeAlpha: Float = 1f,
+) {
     val color = when (box.severity) {
         HeatmapSeverity.Hot -> LoupeColors.Hot
         HeatmapSeverity.Warm -> LoupeColors.Warm
         HeatmapSeverity.Healthy -> LoupeColors.Healthy
     }
-    val strokeWidth = when (box.severity) {
-        HeatmapSeverity.Hot -> 1.5.dp
-        HeatmapSeverity.Warm -> 1.0.dp
-        HeatmapSeverity.Healthy -> 0.5.dp
+    val strokeWidthPx = when (box.severity) {
+        HeatmapSeverity.Hot -> 4f
+        HeatmapSeverity.Warm -> 3f
+        HeatmapSeverity.Healthy -> 2f
     }
+    // Dotted pattern: dash length, gap length
+    val dashPattern = floatArrayOf(8f, 6f)
 
     with(density) {
         val left = box.rect.left.toDp()
         val top = box.rect.top.toDp()
         val width = box.rect.width.toDp()
         val height = box.rect.height.toDp()
+        val cornerRadius = 8.dp.toPx()
 
         Box(
             modifier = Modifier
                 .offset(x = left, y = top)
                 .size(width = width, height = height),
         ) {
-            // Border
+            // Dotted border with transparency
             Box(
                 modifier = Modifier
                     .matchParentSize()
-                    .border(strokeWidth, color, RoundedCornerShape(8.dp)),
+                    .drawBehind {
+                        drawRoundRect(
+                            color = color.copy(alpha = 0.7f),
+                            cornerRadius = androidx.compose.ui.geometry.CornerRadius(cornerRadius),
+                            style = Stroke(
+                                width = strokeWidthPx,
+                                pathEffect = PathEffect.dashPathEffect(dashPattern, 0f),
+                            ),
+                        )
+                    },
             )
-            // Count badge, anchored to the top-right corner
+            // Count badge with transparency, offset diagonally if overlapping
             Box(
                 modifier = Modifier
                     .align(Alignment.TopEnd)
+                    .offset(x = badgeOffsetX.toDp(), y = badgeOffsetY.toDp())
                     .clip(RoundedCornerShape(4.dp))
-                    .background(color)
+                    .background(color.copy(alpha = badgeAlpha))
                     .padding(horizontal = 4.dp, vertical = 1.dp),
             ) {
                 Text(

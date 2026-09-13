@@ -16,15 +16,21 @@ import com.wassimbeltaief.loupe.runtime.reporting.LogcatFormatter
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 
 object LoupeRuntime {
 
     @Volatile private var config = LoupeConfig()
-    @Volatile private var paused = false
     @Volatile private var overlayDismissed = false
     @Volatile private var sessionStartMs = System.currentTimeMillis()
+
+    private val _paused = MutableStateFlow(false)
+
+    /** True while recording is paused — drives the overlay's play/pause control. */
+    val isPaused: StateFlow<Boolean> = _paused.asStateFlow()
 
     private var registry = RecompositionRegistry(
         maxHistoryEntries = config.maxHistoryEntries,
@@ -44,6 +50,19 @@ object LoupeRuntime {
 
     val state: StateFlow<Map<String, RecompositionHistory>> get() = registry.state
 
+    /** Per-instance histories — one row per on-screen instance in the overlay. */
+    val instances: StateFlow<List<RecompositionHistory>> get() = registry.instances
+
+    private val noLiveInstanceIds = MutableStateFlow<Set<String>?>(null)
+
+    /**
+     * Instance ids currently present in the composition tree, or null when not
+     * tracking (heatmap host not attached). The overlay uses this to hide
+     * instances that have scrolled/navigated away.
+     */
+    val onScreenInstanceIds: StateFlow<Set<String>?> get() =
+        heatmapController?.liveInstanceIds ?: noLiveInstanceIds
+
     fun install(application: Application, config: LoupeConfig = LoupeConfig()) {
         configure(config)
         startLogcatReporter()
@@ -59,7 +78,7 @@ object LoupeRuntime {
                         heatmapController?.let { manager.showHeatmap(it) }
                     }
                     if (current.overlayEnabled) {
-                        manager.show(stateFlow = registry.state, config = current)
+                        manager.show(instancesFlow = registry.instances, config = current)
                     }
                 }
 
@@ -71,10 +90,16 @@ object LoupeRuntime {
     }
 
     // Called exclusively by compiler-injected code
-    fun record(key: String, file: String, line: Int, params: Array<Pair<String, Any?>>) {
-        if (paused || !config.recordingEnabled) return
+    fun record(
+        key: String,
+        file: String,
+        line: Int,
+        params: Array<Pair<String, Any?>>,
+        instance: Int = 0,
+    ) {
+        if (_paused.value || !config.recordingEnabled) return
         if (config.ignoreList.any { pattern -> key.matchesGlob(pattern) }) return
-        val record = registry.record(key, file, line, params)
+        val record = registry.record(key, file, line, params, instance)
         // #23 verbose mode: every individual recomposition with param changes
         if (config.logcatEnabled && config.logcatVerbose) {
             Log.d(LogcatFormatter.TAG, LogcatFormatter.verboseLine(record))
@@ -83,8 +108,16 @@ object LoupeRuntime {
 
     // Called exclusively by compiler-injected code, from the finally block
     // wrapping the composable body (#36 duration measurement)
-    fun recordEnd(key: String) {
-        registry.recordEnd(key)
+    fun recordEnd(key: String, instance: Int = 0) {
+        registry.recordEnd(key, instance)
+    }
+
+    // Called exclusively by compiler-injected code, right after a local
+    // `MutableState` is created. Captures internal state so `counter++` shows up
+    // in the drill-down instead of only as a forced recomposition.
+    fun trackState(key: String, instance: Int = 0, name: String, value: Any?) {
+        if (_paused.value || !config.recordingEnabled) return
+        registry.trackState(key, instance, name, value)
     }
 
     fun configure(config: LoupeConfig) {
@@ -94,11 +127,15 @@ object LoupeRuntime {
             maxHistoryEntries = config.maxHistoryEntries,
             windowNs = config.windowSeconds * 1_000_000_000L,
         )
-        heatmapController = HeatmapController(config) { registry.snapshot() }
+        heatmapController = HeatmapController(
+            config = config,
+            instances = { registry.instances.value },
+            onInstanceGone = { registry.clearInstance(it) },
+        )
     }
 
-    fun pause() { paused = true }
-    fun resume() { paused = false }
+    fun pause() { _paused.value = true }
+    fun resume() { _paused.value = false }
 
     // Hides the overlay for the rest of the session (header ✕ button)
     fun dismissOverlay() {
@@ -108,7 +145,7 @@ object LoupeRuntime {
 
     fun reset() {
         registry.reset()
-        paused = false
+        _paused.value = false
         synchronized(logcatSeverity) { logcatSeverity.clear() }
     }
 

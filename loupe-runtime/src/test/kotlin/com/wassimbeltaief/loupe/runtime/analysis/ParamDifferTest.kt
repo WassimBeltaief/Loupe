@@ -78,6 +78,34 @@ class ParamDifferTest {
     }
 
     @Test
+    fun `fresh MutableList with equal contents is a change`() {
+        val snapshot = ParamDiffer.diff(
+            previous = mapOf("items" to mutableListOf("a", "b")),
+            current = arrayOf("items" to mutableListOf("a", "b")),
+        ).single()
+        assertEquals(ParamVerdict.Changed, snapshot.verdict)
+    }
+
+    @Test
+    fun `same MutableList instance is unchanged`() {
+        val list = mutableListOf("a")
+        val snapshot = ParamDiffer.diff(
+            previous = mapOf("items" to list),
+            current = arrayOf("items" to list),
+        ).single()
+        assertEquals(ParamVerdict.Unchanged, snapshot.verdict)
+    }
+
+    @Test
+    fun `immutable listOf with equal contents stays unchanged`() {
+        val snapshot = ParamDiffer.diff(
+            previous = mapOf("items" to listOf("a", "b")),
+            current = arrayOf("items" to listOf("a", "b")),
+        ).single()
+        assertEquals(ParamVerdict.Unchanged, snapshot.verdict)
+    }
+
+    @Test
     fun `truncates long values to 120 chars`() {
         val long = "x".repeat(200)
         val snapshot = ParamDiffer.diff(

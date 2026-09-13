@@ -20,6 +20,10 @@ object ParamDiffer {
             val previousStr = prev.truncated()
             val verdict = when {
                 value is LambdaRef -> if (value != prev) ParamVerdict.LambdaIdentity else ParamVerdict.Unchanged
+                // Compose compares unstable collections by identity — a fresh (even
+                // equal-content) MutableList is what forces the recomposition.
+                SuggestionEngine.isUnstableCollection(value) ->
+                    if (value !== prev) ParamVerdict.Changed else ParamVerdict.Unchanged
                 safeEquals(value, prev) -> ParamVerdict.Unchanged
                 else -> ParamVerdict.Changed
             }

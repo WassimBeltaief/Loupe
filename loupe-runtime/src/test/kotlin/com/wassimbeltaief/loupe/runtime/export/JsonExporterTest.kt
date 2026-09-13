@@ -89,6 +89,28 @@ class JsonExporterTest {
     }
 
     @Test
+    fun `serialises state blame flag`() {
+        val h = history().copy(
+            blamedParams = listOf(BlamedParam("counter", 5, 1f, ParamVerdict.Changed, isState = true)),
+        )
+        val json = JsonExporter.historyToJson(h)
+        assertTrue(json.contains("\"name\":\"counter\""))
+        assertTrue(json.contains("\"state\":true"))
+    }
+
+    @Test
+    fun `serialises state changes`() {
+        val record = history().records.first().copy(
+            stateChanges = listOf(ParamSnapshot("counter", "0", "1", ParamVerdict.Changed)),
+        )
+        val json = JsonExporter.historyToJson(history().copy(records = listOf(record)))
+        assertTrue(json.contains("\"stateChanges\":[{"))
+        assertTrue(json.contains("\"name\":\"counter\""))
+        assertTrue(json.contains("\"previousValue\":\"0\""))
+        assertTrue(json.contains("\"currentValue\":\"1\""))
+    }
+
+    @Test
     fun `no trailing commas — valid JSON shape around arrays`() {
         val json = JsonExporter.historyToJson(history())
         assertFalse(json.contains(",]"), "trailing comma before ] in: $json")

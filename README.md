@@ -120,6 +120,13 @@ LoupeRuntime.install(this, LoupeConfig(
 
 ## How it works
 
-A Kotlin compiler plugin (`build-logic/loupe-plugin`) instruments every eligible `@Composable` at IR level: it prepends a `LoupeRuntime.record(...)` call — lambdas captured as `LambdaRef(identityHashCode)` — and wraps the body in `try/finally` for duration measurement. The Gradle plugin applies it to debuggable variants only. The runtime diffs parameters per recomposition, ranks blame, and renders the overlay in a `WindowManager` layer above your app.
+A Kotlin compiler plugin (`build-logic/loupe-plugin`) instruments every eligible `@Composable` at IR level: it prepends a `LoupeRuntime.record(...)` call — lambdas captured as `LambdaRef(identityHashCode)` — reads local `MutableState` values via `trackState(...)`, and wraps the body in `try/finally` for duration measurement. The Gradle plugin applies it to debuggable variants only. The runtime diffs parameters and state per recomposition, ranks blame, and renders the overlay in a `WindowManager` layer above your app.
 
 See [CLAUDE.md](CLAUDE.md) for the full architecture and design contracts.
+
+<br/>
+
+## Limitations
+
+- **Parameters and local `MutableState`.** Loupe captures composable parameters plus local `remember { mutableStateOf(...) }` reads, shown as `state` rows (e.g. `counter 0 → 1`) instead of an unexplained forced recomposition. Other internal triggers — side-effect-driven invalidation, a non-restartable parent — still surface as `no param change` with the likely cause explained.
+- **Heatmap is opt-in.** Borders and badges need the composition tree, so they require wrapping app content once with `LoupeHeatmapHost { }` (debug builds only). Everything else works with zero code changes.
