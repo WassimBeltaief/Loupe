@@ -17,6 +17,15 @@ import com.wassimbeltaief.loupe.runtime.LoupeConfig
 import com.wassimbeltaief.loupe.runtime.model.RecompositionHistory
 import kotlinx.coroutines.flow.StateFlow
 
+/**
+ * Owns the overlay windows: adds them to the WindowManager, resizes them when
+ * the overlay state changes and removes them when the app goes to the
+ * background.
+ *
+ * There are two windows. The heatmap window is full screen and ignores touches.
+ * The panel window is interactive and sized to its content, so touches outside
+ * it still reach the app.
+ */
 internal class LoupeOverlayManager(private val application: Application) {
 
     private val windowManager =
@@ -27,6 +36,8 @@ internal class LoupeOverlayManager(private val application: Application) {
     private var lifecycleOwner: OverlayLifecycleOwner? = null
     private var windowMode: OverlayWindowMode = OverlayWindowMode.Collapsed
 
+    // Overlay windows need a user-granted permission. When it is missing, log the
+    // exact adb command that grants it, then skip the overlay.
     private fun hasOverlayPermission(): Boolean {
         if (Settings.canDrawOverlays(application)) return true
         Log.w("Loupe", "SYSTEM_ALERT_WINDOW permission not granted — overlay disabled. " +
@@ -40,6 +51,7 @@ internal class LoupeOverlayManager(private val application: Application) {
             lifecycleOwner = it
         }
 
+    /** Adds the interactive overlay panel, collapsed at the bottom. Does nothing if already shown. */
     fun show(
         instancesFlow: StateFlow<List<RecompositionHistory>>,
         config: LoupeConfig,
@@ -80,10 +92,9 @@ internal class LoupeOverlayManager(private val application: Application) {
     }
 
     /**
-     * Resizes the overlay window to match the current UI state. The window is
-     * sized to its content so touches outside it pass through to the app
-     * (FLAG_NOT_TOUCH_MODAL) — a single Android window cannot be interactive in
-     * some regions and touch-through in others.
+     * Resizes the panel to match the current UI state. The window is sized to its
+     * content, and it is not touch-modal, so touches outside it pass through to
+     * the app below.
      */
     fun setWindowMode(mode: OverlayWindowMode) {
         if (windowMode == mode) return
@@ -114,8 +125,8 @@ internal class LoupeOverlayManager(private val application: Application) {
         (application.resources.displayMetrics.heightPixels * LIST_HEIGHT_FRACTION).toInt()
 
     /**
-     * #13: full-screen, non-touchable window that draws heatmap borders + badges.
-     * Added before the panel so the interactive panel stays on top.
+     * Adds the full-screen, non-touchable window that draws the heatmap borders
+     * and badges. It is added before the panel, so the panel stays on top.
      */
     fun showHeatmap(controller: HeatmapController) {
         if (heatmapView != null) return
@@ -160,6 +171,7 @@ internal class LoupeOverlayManager(private val application: Application) {
         return IntArray(2).also { view.getLocationOnScreen(it) }
     }
 
+    /** Removes both windows and stops the lifecycle owner. */
     fun dismiss() {
         heatmapView?.let { windowManager.removeView(it) }
         heatmapView = null

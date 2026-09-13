@@ -6,16 +6,21 @@ import com.wassimbeltaief.loupe.runtime.model.RecompositionHistory
 import com.wassimbeltaief.loupe.runtime.model.RecompositionRecord
 
 /**
- * Formats Loupe output for Logcat (#23). Pure — no android.util.Log dependency —
- * so every line shape is unit-testable on the JVM. The emoji prefix encodes
- * severity, same grammar as the overlay.
+ * Formats the Logcat output.
+ *
+ * It is a pure object, with no `android.util.Log` dependency, so every line can
+ * be tested on the JVM. The emoji prefix uses the same severity grammar as the
+ * overlay: red is hot, orange is warm, green is healthy.
  */
 internal object LogcatFormatter {
 
     const val TAG = "Loupe"
     private const val RULE = "════════════════════════════════════════════"
 
-    /** One summary block per composable (spec format). Only called for warm/hot. */
+    /**
+     * The summary block for one composable. It is only emitted when a composable
+     * becomes warm or hot, so Logcat is not flooded.
+     */
     fun summaryLines(
         history: RecompositionHistory,
         windowSeconds: Int,
@@ -39,7 +44,7 @@ internal object LogcatFormatter {
         add(RULE)
     }
 
-    /** One line per individual recomposition — logcatVerbose mode. */
+    /** One line for a single recomposition. Used by the verbose Logcat mode. */
     fun verboseLine(record: RecompositionRecord): String {
         val changedParams = record.params
             .filter { it.verdict == ParamVerdict.Changed || it.verdict == ParamVerdict.LambdaIdentity }

@@ -15,12 +15,18 @@ import java.util.concurrent.ConcurrentHashMap
 /**
  * In-memory store for recomposition events.
  *
- * Two views are maintained:
- * - **[state]**: aggregated per composable function (key = `File.Function`) — used by
- *   the heatmap and the CI report, where one row per composable is the right unit.
- * - **[instances]**: one history per *instance* (key + compose compound-key hash) —
- *   used by the overlay list so four `ScenarioCard`s show as four rows with their own
- *   counts.
+ * It keeps two views of the same data:
+ * - [state]: one history per composable function, keyed by `File.Function`.
+ *   This is the unit of the heatmap and the CI report.
+ * - [instances]: one history per instance, keyed by `File.Function#compoundKeyHash`.
+ *   This is the unit of the overlay list, so two cards of the same composable
+ *   are two rows with their own counts.
+ *
+ * Each history is a circular buffer, so memory stays bounded during long sessions.
+ *
+ * @param maxHistoryEntries records kept per composable, newest first
+ * @param windowNs length of the rolling window used for the live counts
+ * @param timeSource clock source, injectable so tests can control time
  */
 class RecompositionRegistry(
     private val maxHistoryEntries: Int = 500,
@@ -28,9 +34,10 @@ class RecompositionRegistry(
     private val timeSource: () -> Long = System::nanoTime,
 ) {
     companion object {
-        /** Sentinel for "recordEnd not yet received" — never a valid measured duration. */
+        /** Sentinel for "recordEnd not yet received". Never a valid measured duration. */
         const val DURATION_UNSET = -1L
 
+        /** Builds the id of one instance from its composable key and key hash. */
         internal fun instanceId(key: String, instance: Int): String = "$key#$instance"
     }
 
@@ -51,11 +58,21 @@ class RecompositionRegistry(
     private val instanceEntries = ConcurrentHashMap<String, Entry>()
 
     private val _state = MutableStateFlow<Map<String, RecompositionHistory>>(emptyMap())
+
+    /** One history per composable function. Used by the heatmap and the CI report. */
     val state: StateFlow<Map<String, RecompositionHistory>> = _state.asStateFlow()
 
     private val _instances = MutableStateFlow<List<RecompositionHistory>>(emptyList())
+
+    /** One history per instance. Used by the overlay list. */
     val instances: StateFlow<List<RecompositionHistory>> = _instances.asStateFlow()
 
+    /**
+     * Adds one recomposition to both views and returns the new record.
+     *
+     * @param key composable key (`File.Function`)
+     * @param instance the Compose compound key hash that identifies this instance
+     */
     fun record(
         key: String,
         file: String,
@@ -199,6 +216,7 @@ class RecompositionRegistry(
         return if (text.length <= 120) text else text.take(117) + "..."
     }
 
+    /** Drops all history and counts, for both views. */
     fun reset() {
         entries.clear()
         instanceEntries.clear()
@@ -245,6 +263,11 @@ class RecompositionRegistry(
             )
         }
 
+    /**
+     * Ranks parameters (and local state) by how many recompositions they changed in.
+     * Parameters that never changed are added at the end with a count of 0, so the
+     * blame bar can show them as stable.
+     */
     private fun computeBlame(records: List<RecompositionRecord>): List<BlamedParam> {
         if (records.isEmpty()) return emptyList()
         val counts = mutableMapOf<String, Int>()
@@ -281,7 +304,8 @@ class RecompositionRegistry(
                     isState = isState,
                 )
             }
-        // Spec: the blame bar also shows params that never contributed ("title · 0x stable")
+        // The blame bar also lists params that never contributed, so a stable
+        // parameter is visible as "0x" instead of being missing.
         val stable = records.first().params
             .filter { it.name !in counts && it.verdict != ParamVerdict.FirstComposition }
             .map { BlamedParam(it.name, 0, 0f, ParamVerdict.Unchanged) }

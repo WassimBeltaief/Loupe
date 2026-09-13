@@ -7,8 +7,10 @@ import org.jetbrains.kotlin.compiler.plugin.ExperimentalCompilerApi
 import org.jetbrains.kotlin.config.CompilerConfiguration
 
 /**
- * Bridges Gradle-side [SubpluginOption]s (see `LoupeGradlePlugin`) into the
- * compiler's [CompilerConfiguration]. Option names must match exactly.
+ * Reads the options that the Gradle plugin passes to the compiler and stores
+ * them in the [CompilerConfiguration].
+ *
+ * Option names must match the names used by `LoupeGradlePlugin` exactly.
  */
 @OptIn(ExperimentalCompilerApi::class)
 class LoupeCommandLineProcessor : CommandLineProcessor {

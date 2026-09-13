@@ -45,9 +45,9 @@ internal fun LoupeOverlay(
     val instances by instancesFlow.collectAsState()
     val onScreenIds by LoupeRuntime.onScreenInstanceIds.collectAsState()
     val isPaused by LoupeRuntime.isPaused.collectAsState()
-    // Hide instances no longer composed (navigated away / scrolled off). The heatmap
-    // reports live instance ids, so the detail screen no longer keeps the grid's rows.
-    // null = not tracking (no heatmap host) → fall back to showing everything.
+    // Hide instances that are no longer composed, for example after a screen
+    // change. The heatmap reports live instance ids. When it is not attached the
+    // value is null, and everything is shown.
     val visibleInstances = onScreenIds?.let { ids ->
         instances.filter { it.instanceId in ids }
     } ?: instances

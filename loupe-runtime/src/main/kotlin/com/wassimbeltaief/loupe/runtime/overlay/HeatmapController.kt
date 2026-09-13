@@ -14,7 +14,7 @@ import kotlinx.coroutines.flow.asStateFlow
 
 /**
  * Locates tracked composables on screen by sampling the Compose tooling data
- * (slot table) and exposes their footprints for the heatmap window (#13).
+ * (slot table) and exposes their footprints for the heatmap window.
  *
  * SLOT-TABLE ACCESS IS MAIN-THREAD ONLY — [sample] must be called from the main
  * thread. `LoupeHeatmapHost`'s LaunchedEffect drives exactly that.

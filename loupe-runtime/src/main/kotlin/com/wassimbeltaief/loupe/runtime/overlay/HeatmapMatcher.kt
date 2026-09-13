@@ -19,9 +19,9 @@ internal data class HeatmapBox(
 )
 
 /**
- * Pure mapping from Compose tooling data ([Group]) to Loupe keys and severity (#13).
- * Kept free of Android/UI dependencies so the tree walk and key resolution are
- * unit-testable on the JVM.
+ * Maps Compose tooling data ([Group]) to Loupe keys and severity.
+ * It has no Android or UI dependency, so the tree walk and the key resolution
+ * can be tested on the JVM.
  */
 @OptIn(UiToolingDataApi::class)
 internal object HeatmapMatcher {
@@ -30,8 +30,8 @@ internal object HeatmapMatcher {
     data class RawBox(val key: String, val name: String, val rect: IntRect)
 
     /**
-     * Loupe keys are `FileName.Function` (#37). Tooling groups carry the composable
-     * name plus its source file, so we rebuild the same key to match history.
+     * Builds a Loupe key, `FileName.Function`, from a tooling group name and its
+     * source file, so it can be matched with the recorded history.
      */
     fun keyFor(name: String, sourceFile: String?): String? {
         if (name.isEmpty()) return null

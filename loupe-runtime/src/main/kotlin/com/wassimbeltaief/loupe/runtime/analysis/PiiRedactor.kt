@@ -1,12 +1,13 @@
 package com.wassimbeltaief.loupe.runtime.analysis
 
 /**
- * Safety net for PII in captured String parameter values (#20). Email addresses
- * and credit-card-like numeric sequences are replaced with "[redacted]" before
- * they ever reach the registry, overlay, or JSON export.
+ * A safety net for personal data in string parameter values.
  *
- * Deliberately conservative: only top-level String params are scanned. PII
- * embedded in other types' toString() output needs @LoupeRedact on the type.
+ * Emails and card-like numbers are replaced with "[redacted]" before they reach
+ * the registry, the overlay or the JSON export.
+ *
+ * It only checks top-level strings. Personal data hidden inside another type's
+ * `toString()` output is not caught here, so that type should use `@LoupeRedact`.
  */
 internal object PiiRedactor {
 
@@ -14,9 +15,10 @@ internal object PiiRedactor {
 
     private val EMAIL = Regex("^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}$")
 
-    // 13–19 digits allowing spaces/dashes as separators (card-like sequences)
+    // 13 to 19 digits, spaces and dashes allowed as separators.
     private val CARD_LIKE = Regex("^[\\d][\\d -]{11,21}[\\d]$")
 
+    /** Returns the value unchanged, or [REDACTED] when it looks like personal data. */
     fun redact(value: String): String {
         val trimmed = value.trim()
         if (EMAIL.matches(trimmed)) return REDACTED

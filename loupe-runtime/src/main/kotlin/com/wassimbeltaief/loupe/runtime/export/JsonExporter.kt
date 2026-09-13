@@ -4,12 +4,15 @@ import com.wassimbeltaief.loupe.runtime.model.ParamSnapshot
 import com.wassimbeltaief.loupe.runtime.model.RecompositionHistory
 
 /**
- * Serialises a full [RecompositionHistory] (records included) to JSON for the
- * drill-down panel's Share / Copy actions. Hand-rolled (no serialization
- * dependency in the runtime) with proper string escaping.
+ * Writes a [RecompositionHistory] as JSON for the Share and Copy actions.
+ *
+ * The JSON is built by hand, so the runtime needs no serialization dependency.
+ * Values are escaped properly, so a parameter that contains quotes or newlines
+ * still produces valid JSON.
  */
 object JsonExporter {
 
+    /** Returns the full history, records included, as one JSON object. */
     fun historyToJson(history: RecompositionHistory): String = buildString {
         append("{")
         field("key", history.key); comma()
@@ -79,6 +82,7 @@ object JsonExporter {
         if (value == null) append("null") else { append("\""); append(escape(value)); append("\"") }
     }
 
+    /** Escapes the characters that are not allowed inside a JSON string. */
     internal fun escape(value: String): String = buildString(value.length + 16) {
         for (c in value) {
             when (c) {

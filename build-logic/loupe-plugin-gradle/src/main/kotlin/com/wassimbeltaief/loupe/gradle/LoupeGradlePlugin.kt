@@ -20,6 +20,7 @@ import org.jetbrains.kotlin.gradle.plugin.SubpluginOption
  */
 class LoupeGradlePlugin : KotlinCompilerPluginSupportPlugin {
 
+    /** Registers the `loupe { }` extension. */
     override fun apply(project: Project) {
         project.extensions.create("loupe", LoupeExtension::class.java)
     }
@@ -29,6 +30,13 @@ class LoupeGradlePlugin : KotlinCompilerPluginSupportPlugin {
     override fun getPluginArtifact(): SubpluginArtifact =
         SubpluginArtifact(groupId = GROUP_ID, artifactId = PLUGIN_ARTIFACT_ID, version = VERSION)
 
+    /**
+     * Decides whether the compiler plugin is applied to one compilation.
+     *
+     * The plugin is skipped on release and staging variants, and on test
+     * compilations, because the app code is already instrumented through its own
+     * debug compilation.
+     */
     override fun isApplicable(kotlinCompilation: KotlinCompilation<*>): Boolean {
         val project = kotlinCompilation.target.project
         val extension = project.extensions.findByType(LoupeExtension::class.java) ?: return false
@@ -45,6 +53,12 @@ class LoupeGradlePlugin : KotlinCompilerPluginSupportPlugin {
         return isDebuggableVariant && !isTestCompilation
     }
 
+    /**
+     * Passes the plugin options to the compiler.
+     *
+     * The package filter comes from the `loupe { }` extension. When it is empty,
+     * the module namespace is used, so only the app's own code is instrumented.
+     */
     override fun applyToCompilation(kotlinCompilation: KotlinCompilation<*>): Provider<List<SubpluginOption>> {
         val project = kotlinCompilation.target.project
         val extension = project.extensions.getByType(LoupeExtension::class.java)
@@ -56,7 +70,7 @@ class LoupeGradlePlugin : KotlinCompilerPluginSupportPlugin {
         }
     }
 
-    // Default scope: the module's own namespace (applicationId equivalent), per spec
+    // Default scope: the module's own namespace, which is the app's own code.
     private fun Project.androidNamespace(): String? =
         extensions.findByType(ApplicationExtension::class.java)?.namespace
             ?: extensions.findByType(LibraryExtension::class.java)?.namespace

@@ -21,6 +21,16 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 
+/**
+ * The entry point of Loupe and the place where all runtime state lives.
+ *
+ * During normal use you only call [install] once, and the overlay does the rest.
+ * The `record`, `recordEnd` and `trackState` functions are not for you: the
+ * compiler plugin injects those calls into your composables.
+ *
+ * The other public functions are for tests and for programmatic control:
+ * [pause], [resume], [reset], [snapshot] and `record { }`.
+ */
 object LoupeRuntime {
 
     @Volatile private var config = LoupeConfig()
@@ -38,15 +48,16 @@ object LoupeRuntime {
 
     private var overlayManager: LoupeOverlayManager? = null
 
-    // #13 heatmap state
+    // Heatmap state
     private var heatmapController: HeatmapController? = null
     @Volatile private var heatmapContentView: View? = null
 
-    // #23: per-key severity at last Logcat summary — summary is emitted only when
-    // a composable crosses UP into warm/hot, so Logcat is never spammed per frame
+    // Per-key severity at the last Logcat summary. A summary is only emitted when
+    // a composable crosses up into warm or hot, so Logcat is not flooded.
     private val logcatSeverity = mutableMapOf<String, Int>()
     private val logcatScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
+    /** Aggregated histories, one per composable function, keyed by `File.Function`. */
     val state: StateFlow<Map<String, RecompositionHistory>> get() = registry.state
 
     /** Per-instance histories — one row per on-screen instance in the overlay. */
@@ -62,6 +73,13 @@ object LoupeRuntime {
     val onScreenInstanceIds: StateFlow<Set<String>?> get() =
         heatmapController?.liveInstanceIds ?: noLiveInstanceIds
 
+    /**
+     * Starts Loupe. Call this once from your `Application.onCreate()`.
+     *
+     * It applies [config], starts the Logcat reporter (when enabled) and shows
+     * the overlay while the app is in the foreground. It is a no-op for the
+     * overlay when the app does not have the overlay permission.
+     */
     fun install(application: Application, config: LoupeConfig = LoupeConfig()) {
         configure(config)
         startLogcatReporter()
@@ -87,7 +105,10 @@ object LoupeRuntime {
         }
     }
 
-    // Called exclusively by compiler-injected code
+    /**
+     * Called by compiler-injected code at the start of a composable body.
+     * Not part of the public API.
+     */
     fun record(
         key: String,
         file: String,
@@ -98,26 +119,36 @@ object LoupeRuntime {
         if (_paused.value || !config.recordingEnabled) return
         if (config.ignoreList.any { pattern -> key.matchesGlob(pattern) }) return
         val record = registry.record(key, file, line, params, instance)
-        // #23 verbose mode: every individual recomposition with param changes
+        // Verbose mode logs every single recomposition.
         if (config.logcatEnabled && config.logcatVerbose) {
             Log.d(LogcatFormatter.TAG, LogcatFormatter.verboseLine(record))
         }
     }
 
-    // Called exclusively by compiler-injected code, from the finally block
-    // wrapping the composable body (#36 duration measurement)
+    /**
+     * Called by compiler-injected code in the `finally` block that wraps the
+     * composable body. It closes the record and stores the measured duration.
+     * Not part of the public API.
+     */
     fun recordEnd(key: String, instance: Int = 0) {
         registry.recordEnd(key, instance)
     }
 
-    // Called exclusively by compiler-injected code, right after a local
-    // `MutableState` is created. Captures internal state so `counter++` shows up
-    // in the drill-down instead of only as a forced recomposition.
+    /**
+     * Called by compiler-injected code right after a local `MutableState` is
+     * created. It lets the drill-down show a state change such as `counter 0 -> 1`
+     * instead of a forced recomposition with no visible cause.
+     * Not part of the public API.
+     */
     fun trackState(key: String, instance: Int = 0, name: String, value: Any?) {
         if (_paused.value || !config.recordingEnabled) return
         registry.trackState(key, instance, name, value)
     }
 
+    /**
+     * Applies a new config and starts a fresh recording session.
+     * [install] calls this for you.
+     */
     fun configure(config: LoupeConfig) {
         this.config = config
         sessionStartMs = System.currentTimeMillis()
@@ -132,16 +163,20 @@ object LoupeRuntime {
         )
     }
 
+    /** Stops recording. The overlay stays visible and keeps showing what it has. */
     fun pause() { _paused.value = true }
+
+    /** Resumes recording after [pause]. */
     fun resume() { _paused.value = false }
 
+    /** Clears all history and counts, and resumes recording. */
     fun reset() {
         registry.reset()
         _paused.value = false
         synchronized(logcatSeverity) { logcatSeverity.clear() }
     }
 
-    // ── #13 heatmap host API — driven by LoupeHeatmapHost on the main thread ──
+    // ── Heatmap host API. Driven by LoupeHeatmapHost, on the main thread. ────
 
     internal fun attachInspectionTables(tables: MutableSet<CompositionData>, contentView: View) {
         heatmapContentView = contentView
@@ -178,6 +213,7 @@ object LoupeRuntime {
         controller.sample(origin)
     }
 
+    /** Returns the current state as an immutable [LoupeReport]. */
     fun snapshot(): LoupeReport {
         val snap = registry.snapshot()
         val hot = snap.values.filter { it.windowRecompositions >= config.hotThreshold }
@@ -191,7 +227,12 @@ object LoupeRuntime {
         )
     }
 
-    // Testing API — records while block runs, returns report
+    /**
+     * Records while [block] runs, then returns the report.
+     *
+     * History is cleared first, so the report only contains what happened inside
+     * the block. This is the main entry point for the CI testing API.
+     */
     fun record(block: () -> Unit): LoupeReport {
         reset()
         val start = System.currentTimeMillis()
@@ -209,7 +250,7 @@ object LoupeRuntime {
         )
     }
 
-    // #23: emits the summary block when a composable crosses up into warm/hot
+    // Emits the summary block when a composable becomes warm or hot.
     private fun startLogcatReporter() {
         if (!config.logcatEnabled) return
         logcatScope.launch {
@@ -232,6 +273,7 @@ object LoupeRuntime {
         }
     }
 
+    /** Simple name match, where `*` matches any part of the name. */
     private fun String.matchesGlob(pattern: String): Boolean {
         if (!pattern.contains('*')) return this == pattern
         val regexStr = pattern.split('*').joinToString(".*") { Regex.escape(it) }
