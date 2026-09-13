@@ -4,17 +4,36 @@
 
 Add a single `debugImplementation`, and Loupe instruments every composable for you: a live overlay ranks the hottest ones, and the drill-down tells you exactly which parameter (or local state) caused each recomposition. No code changes, no Android Studio, no USB.
 
-<p align="center">
-  <img src="LoupeRecording.gif" width="300" alt="Loupe overlay and drill-down in action"/>
-</p>
+<table>
+  <tr>
+    <th align="center" width="50%">Happy path</th>
+    <th align="center" width="50%">Unhappy path</th>
+  </tr>
+  <tr>
+    <td align="center" valign="top">
+      <img src="LoupeRecording.gif" width="300" alt="Stable album grid: liking one album recomposes only that card"/>
+    </td>
+    <td align="center" valign="top">
+      <img src="LoupeUnhappyPath.gif" width="300" alt="Comment list recomposing every second because of a ticking viewmodel state"/>
+    </td>
+  </tr>
+  <tr>
+    <td valign="top">
+      Loupe makes it easy to see at a glance when things are good: the screen is healthy and skipping as intended.
+    </td>
+    <td valign="top">
+        Loupe makes it just as easy to see when things are bad: the wasted work stands out instead of hiding.
+    </td>
+  </tr>
+</table>
 
 ## What you get
 
-- **Live overlay** — on-screen composables ranked by recomposition count and cost, with proportional bars.
-- **Drill-down** — tap a row for a burst-grouped timeline, per-parameter blame (`changed`, `lambda`, `MutableList`, `state`) and 💡 fix suggestions.
-- **Local state changes** — `counter 0 → 1` shows when a composable recomposes because of its own `remember { mutableStateOf(...) }`.
-- **Share with QA** — export the full history as JSON to Slack/Jira. No developer needed to reproduce the issue.
-- **Heatmap (opt-in)** — coloured borders and count badges drawn over the composables on screen.
+- **Live overlay:** on-screen composables ranked by recomposition count and cost, with proportional bars.
+- **Drill-down:** tap a row for a burst-grouped timeline, per-parameter blame (`changed`, `lambda`, `MutableList`, `state`) and 💡 fix suggestions.
+- **Local state changes:** `counter 0 → 1` shows when a composable recomposes because of its own `remember { mutableStateOf(...) }`.
+- **Share with QA:** export the full history as JSON to Slack/Jira. No developer needed to reproduce the issue.
+- **Heatmap (opt-in):** coloured borders and count badges drawn over the composables on screen.
 
 ## Install
 
