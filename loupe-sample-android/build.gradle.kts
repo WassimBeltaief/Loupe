@@ -40,6 +40,9 @@ dependencies {
     implementation(libs.compose.foundation)
     implementation(libs.compose.material3)
     implementation(libs.activity.compose)
+    implementation(libs.coroutines.android)
+    implementation(libs.lifecycle.viewmodel.compose)
+    implementation(libs.lifecycle.runtime.compose)
 
     debugImplementation(libs.compose.ui.tooling)
     // ui-test-manifest registers the host Activity createComposeRule needs

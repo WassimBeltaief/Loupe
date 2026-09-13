@@ -3,22 +3,27 @@ package com.wassimbeltaief.loupe.runtime.overlay
 import androidx.compose.ui.graphics.Color
 
 /**
- * Shared visual grammar (CLAUDE.md "Visual Design Language"). One source so the
- * list panel, drill-down, heatmap and future surfaces read as one tool.
+ * Shared visual grammar (CLAUDE.md "Visual Design Language").
+ *
+ * Light, cream-white surfaces per the design mockups — opaque, no transparency.
  */
 internal object LoupeColors {
-    // Severity (counts within the rolling window)
+    // Severity
     val Hot = Color(0xFFE24B4A)
     val Warm = Color(0xFFEF9F27)
     val Healthy = Color(0xFF1D9E75)
 
     // Verdict (blame bar + chips) — colour encodes verdict type, never rank
-    val VerdictUnstable = Hot          // genuine unstable value change
-    val VerdictLambda = Warm           // lambda identity — ambiguous, never red
-    val VerdictUnchanged = Color(0xFFC4C4C4)
+    val VerdictUnstable = Hot
+    val VerdictLambda = Warm
+    val VerdictUnchanged = Color(0xFF9A9287)
 
-    // Surface
-    val Surface = Color(0xF0121212)
-    val OnSurface = Color(0xFFEEEEEE)
-    val Divider = Color(0xFF2A2A2A)
+    // Cream-white surfaces
+    val Surface = Color(0xFFFAF6EF)          // cream white
+    val SurfaceRaised = Color(0xFFFFFDF9)
+    val OnSurface = Color(0xFF2A2620)
+    val OnSurfaceVariant = Color(0xFF6B6459)
+    val Divider = Color(0xFFE7E0D3)
+    val Outline = Color(0xFFD8CFC0)
+    val Scrim = Color(0x33000000)
 }

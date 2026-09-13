@@ -346,6 +346,67 @@ class LoupeIrTransformerTest {
     }
 
     @Test
+    fun `captures local MutableState declarations`() {
+        val source = SourceFile.kotlin(
+            "Counter.kt", """
+            import androidx.compose.runtime.Composable
+            import androidx.compose.runtime.mutableStateOf
+            @Composable
+            fun CounterComposable() {
+                val counter = mutableStateOf(0)
+                counter.value = counter.value + 1
+            }
+            """.trimIndent()
+        )
+
+        val (result, _) = compileWithPlugin(source, extraStubs = listOf(composeStateStub))
+        assertEquals(KotlinCompilation.ExitCode.OK, result.exitCode, result.messages)
+
+        result.classLoader.loadClass("CounterKt").getMethod("CounterComposable").invoke(null)
+
+        val stateCalls = stateCalls(result)
+        assertEquals(1, stateCalls.size, "Expected one trackState call for the local state")
+        assertEquals("Counter.CounterComposable", stateCalls[0][0])
+        assertEquals("counter", stateCalls[0][2])
+    }
+
+    /** Reads LoupeRuntime.stateCalls from the compiled classloader (populated by trackState). */
+    private fun stateCalls(result: JvmCompilationResult): List<List<Any?>> {
+        val runtimeClass = result.classLoader.loadClass("com.wassimbeltaief.loupe.runtime.LoupeRuntime")
+        val instance = runtimeClass.getField("INSTANCE").get(null)
+        @Suppress("UNCHECKED_CAST")
+        return runtimeClass.getMethod("getStateCalls").invoke(instance) as List<List<Any?>>
+    }
+
+    @Test
+    fun `captures delegated MutableState via remember`() {
+        val source = SourceFile.kotlin(
+            "Delegated.kt", """
+            import androidx.compose.runtime.Composable
+            import androidx.compose.runtime.getValue
+            import androidx.compose.runtime.mutableStateOf
+            import androidx.compose.runtime.remember
+            import androidx.compose.runtime.setValue
+            @Composable
+            fun DelegatedCounter() {
+                var counter by remember { mutableStateOf(0) }
+                counter++
+            }
+            """.trimIndent()
+        )
+
+        val (result, _) = compileWithPlugin(source, extraStubs = listOf(composeStateStub))
+        assertEquals(KotlinCompilation.ExitCode.OK, result.exitCode, result.messages)
+
+        result.classLoader.loadClass("DelegatedKt").getMethod("DelegatedCounter").invoke(null)
+
+        val stateCalls = stateCalls(result)
+        assertEquals(1, stateCalls.size, "Expected one trackState call for the delegated state")
+        assertEquals("Delegated.DelegatedCounter", stateCalls[0][0])
+        assertEquals("counter", stateCalls[0][2])
+    }
+
+    @Test
     fun `same-named composables in different files get distinct keys`() {
         // #37: unqualified keys would merge these into one history
         val sourceA = SourceFile.kotlin(

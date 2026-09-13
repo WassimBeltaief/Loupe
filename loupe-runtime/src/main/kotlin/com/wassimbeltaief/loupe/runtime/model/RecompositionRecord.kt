@@ -8,4 +8,6 @@ data class RecompositionRecord(
     val params: List<ParamSnapshot>,
     val durationNs: Long,
     val wasForced: Boolean,
+    /** Local `MutableState` values captured by the plugin, diffed across recompositions. */
+    val stateChanges: List<ParamSnapshot> = emptyList(),
 )

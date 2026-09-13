@@ -26,17 +26,35 @@ object SuggestionEngine {
      */
     fun forChangedValue(name: String, value: Any?): String? {
         if (value == null) return null
-        val simpleName = value.javaClass.simpleName
         return when {
-            value is ArrayList<*> || value is java.util.LinkedList<*> || simpleName.contains("MutableList") ->
+            isUnstableList(value) ->
                 "$name uses a mutable collection type which is unstable. " +
                     "Replace with ImmutableList or persistentListOf()."
-            value is HashMap<*, *> || value is java.util.TreeMap<*, *> ||
-                value is java.util.Hashtable<*, *> || simpleName.contains("MutableMap") ->
+            isUnstableMap(value) ->
                 "$name uses a mutable map which is unstable. " +
                     "Replace with ImmutableMap or persistentMapOf()."
             else -> null
         }
+    }
+
+    /**
+     * Mutable collections Compose treats as unstable: compared by *identity*, not
+     * `equals`. `listOf()` (an immutable `Arrays$ArrayList`) is deliberately excluded —
+     * only genuinely mutable types are flagged.
+     */
+    fun isUnstableCollection(value: Any?): Boolean =
+        isUnstableList(value) || isUnstableMap(value)
+
+    private fun isUnstableList(value: Any?): Boolean {
+        if (value == null) return false
+        return value is ArrayList<*> || value is java.util.LinkedList<*> ||
+            value.javaClass.simpleName.contains("MutableList")
+    }
+
+    private fun isUnstableMap(value: Any?): Boolean {
+        if (value == null) return false
+        return value is HashMap<*, *> || value is java.util.TreeMap<*, *> ||
+            value is java.util.Hashtable<*, *> || value.javaClass.simpleName.contains("MutableMap")
     }
 
     /**

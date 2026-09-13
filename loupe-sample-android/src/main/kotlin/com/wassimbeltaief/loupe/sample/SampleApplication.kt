@@ -10,8 +10,9 @@ class SampleApplication : Application() {
         LoupeRuntime.install(
             application = this,
             config = LoupeConfig(
-                hotThreshold = 5,
-                warmThreshold = 2,
+                // Bands: 1 green · 3–9 amber · 10+ red
+                hotThreshold = 10,
+                warmThreshold = 3,
                 windowSeconds = 5,
             ),
         )

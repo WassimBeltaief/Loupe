@@ -67,6 +67,9 @@ dependencies {
     implementation(libs.compose.ui)
     implementation(libs.compose.foundation)
     implementation(libs.compose.material3)
+    // #13 heatmap: reads the composition slot table (Layout-Inspector-grade bounds).
+    // Debug-only in practice — consumers add loupe-runtime via debugImplementation.
+    implementation(libs.compose.ui.tooling.data)
     implementation(libs.coroutines.android)
     implementation(libs.lifecycle.process)
     implementation(libs.lifecycle.runtime)
@@ -77,4 +80,6 @@ dependencies {
 
     testImplementation(libs.kotlin.test)
     testImplementation(libs.coroutines.test)
+    testImplementation(libs.compose.ui)
+    testImplementation(libs.compose.ui.tooling.data)
 }

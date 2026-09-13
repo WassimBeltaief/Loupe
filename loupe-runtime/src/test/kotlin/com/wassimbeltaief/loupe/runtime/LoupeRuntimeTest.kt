@@ -28,6 +28,23 @@ class LoupeRuntimeTest {
     }
 
     @Test
+    fun `isPaused reflects pause and resume for the overlay toggle`() {
+        LoupeRuntime.resume()
+        assertEquals(false, LoupeRuntime.isPaused.value)
+        LoupeRuntime.pause()
+        assertEquals(true, LoupeRuntime.isPaused.value)
+        LoupeRuntime.resume()
+        assertEquals(false, LoupeRuntime.isPaused.value)
+    }
+
+    @Test
+    fun `reset clears the paused state`() {
+        LoupeRuntime.pause()
+        LoupeRuntime.reset()
+        assertEquals(false, LoupeRuntime.isPaused.value)
+    }
+
+    @Test
     fun `resume restarts recording after pause`() {
         LoupeRuntime.pause()
         LoupeRuntime.record("Card", "Card.kt", 1, arrayOf("n" to 1))

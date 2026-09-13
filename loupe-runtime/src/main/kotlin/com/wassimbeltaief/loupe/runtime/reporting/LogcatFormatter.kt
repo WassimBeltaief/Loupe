@@ -41,9 +41,13 @@ internal object LogcatFormatter {
 
     /** One line per individual recomposition — logcatVerbose mode. */
     fun verboseLine(record: RecompositionRecord): String {
-        val changed = record.params
+        val changedParams = record.params
             .filter { it.verdict == ParamVerdict.Changed || it.verdict == ParamVerdict.LambdaIdentity }
-            .joinToString { "${it.name}: ${it.previousValue} → ${it.currentValue}" }
+            .map { "${it.name}: ${it.previousValue} → ${it.currentValue}" }
+        val changedState = record.stateChanges
+            .filter { it.verdict == ParamVerdict.Changed }
+            .map { "${it.name}(state): ${it.previousValue} → ${it.currentValue}" }
+        val changed = (changedParams + changedState).joinToString()
         val forced = if (record.wasForced) "  [forced]" else ""
         return "${record.key}  recomposition$forced" +
             (if (changed.isNotEmpty()) "  |  $changed" else "  |  params unchanged")
@@ -51,6 +55,7 @@ internal object LogcatFormatter {
 
     private fun blameLine(param: BlamedParam): String {
         val verdict = when {
+            param.isState -> "state change"
             param.recompositionCount == 0 -> "stable ✓"
             param.dominantVerdict == ParamVerdict.LambdaIdentity -> "lambda identity"
             param.suggestion != null -> "unstable"

@@ -82,4 +82,25 @@ class LogcatFormatterTest {
         )
         assertTrue(LogcatFormatter.verboseLine(record).contains("[forced]"))
     }
+
+    @Test
+    fun `state blame renders as state change`() {
+        val lines = LogcatFormatter.summaryLines(
+            history(6, listOf(BlamedParam("counter", 5, 1f, ParamVerdict.Changed, isState = true))),
+            5,
+        )
+        assertTrue(lines.any { it.contains("counter") && it.contains("state change") })
+    }
+
+    @Test
+    fun `verbose line lists changed state`() {
+        val record = RecompositionRecord(
+            key = "Card", file = "Card.kt", line = 1, timestampNs = 0L,
+            params = emptyList(),
+            durationNs = 0L,
+            wasForced = true,
+            stateChanges = listOf(ParamSnapshot("counter", "0", "1", ParamVerdict.Changed)),
+        )
+        assertTrue(LogcatFormatter.verboseLine(record).contains("counter(state): 0 → 1"))
+    }
 }

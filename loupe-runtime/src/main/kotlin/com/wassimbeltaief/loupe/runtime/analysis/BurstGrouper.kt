@@ -33,6 +33,27 @@ object BurstGrouper {
                 .eachCount()
                 .maxByOrNull { it.value }
                 ?.key
+
+        /** Verdict of [dominantChangedParam] — drives its colour (never rank). */
+        val dominantChangedVerdict: ParamVerdict
+            get() {
+                val dominant = dominantChangedParam ?: return ParamVerdict.Unchanged
+                return records
+                    .flatMap { it.params }
+                    .firstOrNull {
+                        it.name == dominant &&
+                            (it.verdict == ParamVerdict.Changed || it.verdict == ParamVerdict.LambdaIdentity)
+                    }
+                    ?.verdict ?: ParamVerdict.Unchanged
+            }
+
+        /** Names of local `MutableState` reads that changed across the burst. */
+        val changedStateNames: List<String>
+            get() = records
+                .flatMap { it.stateChanges }
+                .filter { it.verdict == ParamVerdict.Changed }
+                .map { it.name }
+                .distinct()
     }
 
     /**

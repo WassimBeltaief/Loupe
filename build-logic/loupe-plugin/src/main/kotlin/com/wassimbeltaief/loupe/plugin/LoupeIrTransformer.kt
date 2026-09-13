@@ -17,7 +17,10 @@ import org.jetbrains.kotlin.ir.builders.irImplicitCast
 import org.jetbrains.kotlin.ir.builders.irVararg
 import org.jetbrains.kotlin.ir.declarations.IrSimpleFunction
 import org.jetbrains.kotlin.ir.declarations.IrValueParameter
+import org.jetbrains.kotlin.ir.declarations.IrVariable
 import org.jetbrains.kotlin.ir.declarations.IrAnnotationContainer
+import org.jetbrains.kotlin.ir.declarations.IrClass
+import org.jetbrains.kotlin.ir.declarations.IrLocalDelegatedProperty
 import org.jetbrains.kotlin.ir.expressions.IrBlock
 import org.jetbrains.kotlin.ir.expressions.IrBlockBody
 import org.jetbrains.kotlin.ir.expressions.IrCall
@@ -38,6 +41,7 @@ import org.jetbrains.kotlin.ir.util.file
 import org.jetbrains.kotlin.ir.util.fqNameWhenAvailable
 import org.jetbrains.kotlin.ir.util.functions
 import org.jetbrains.kotlin.ir.util.hasAnnotation
+import org.jetbrains.kotlin.ir.util.properties
 import org.jetbrains.kotlin.ir.visitors.IrElementTransformerVoid
 import org.jetbrains.kotlin.ir.visitors.transformChildrenVoid
 import org.jetbrains.kotlin.name.CallableId
@@ -52,6 +56,9 @@ private val LOUPE_RUNTIME_CLASS_ID = ClassId.topLevel(FqName("com.wassimbeltaief
 private val PAIR_CLASS_ID = ClassId(FqName("kotlin"), Name.identifier("Pair"))
 private val SYSTEM_CLASS_ID = ClassId.fromString("java/lang/System")
 private val LAMBDA_REF_CLASS_ID = ClassId(FqName("com.wassimbeltaief.loupe.runtime.model"), Name.identifier("LambdaRef"))
+
+/** Compose injects the Composer parameter under this name. */
+private const val COMPOSER_PARAM_NAME = "\$composer"
 
 internal class LoupeIrTransformer(
     private val pluginContext: IrPluginContext,
@@ -76,10 +83,10 @@ internal class LoupeIrTransformer(
         pluginContext.referenceFunctions(
             CallableId(LOUPE_RUNTIME_CLASS_ID, Name.identifier("record"))
         ).firstOrNull { fn ->
-            fn.owner.valueParameters.size == 4 &&
+            fn.owner.valueParameters.size == 5 &&
                 fn.owner.valueParameters[0].name.asString() == "key"
         }.also { fn ->
-            if (fn == null) warn("LoupeRuntime.record(key,file,line,params) not found — no composables will be instrumented")
+            if (fn == null) warn("LoupeRuntime.record(key,file,line,params,instance) not found — no composables will be instrumented")
         }
     }
 
@@ -88,11 +95,51 @@ internal class LoupeIrTransformer(
         pluginContext.referenceFunctions(
             CallableId(LOUPE_RUNTIME_CLASS_ID, Name.identifier("recordEnd"))
         ).firstOrNull { fn ->
-            fn.owner.valueParameters.size == 1 &&
+            fn.owner.valueParameters.size == 2 &&
                 fn.owner.valueParameters[0].name.asString() == "key"
         }.also { fn ->
-            if (fn == null) warn("LoupeRuntime.recordEnd(key) not found — duration measurement disabled")
+            if (fn == null) warn("LoupeRuntime.recordEnd(key,instance) not found — duration measurement disabled")
         }
+    }
+
+    // Local MutableState capture: emitted right after a state variable is declared
+    private val trackStateFn by lazy {
+        pluginContext.referenceFunctions(
+            CallableId(LOUPE_RUNTIME_CLASS_ID, Name.identifier("trackState"))
+        ).firstOrNull { fn ->
+            fn.owner.valueParameters.size == 4 &&
+                fn.owner.valueParameters[0].name.asString() == "key"
+        }.also { fn ->
+            if (fn == null) warn("LoupeRuntime.trackState(key,instance,name,value) not found — local state tracking disabled")
+        }
+    }
+
+    private val stateClass by lazy {
+        pluginContext.referenceClass(ClassId.topLevel(FqName("androidx.compose.runtime.State")))
+    }
+
+    private val stateValueGetter by lazy {
+        stateClass?.owner?.properties
+            ?.firstOrNull { it.name.asString() == "value" }
+            ?.getter
+            .also { getter ->
+                if (getter == null) warn("State.value not found — local state tracking disabled")
+            }
+    }
+
+    // Per-instance identity: Compose's compound key hash, unique per call-site
+    // instance (documented caveat: unkeyed loops can collide → aggregated counts)
+    private val composerClass by lazy {
+        pluginContext.referenceClass(ClassId.topLevel(FqName("androidx.compose.runtime.Composer")))
+    }
+
+    private val compoundKeyHashGetter by lazy {
+        composerClass?.owner?.properties
+            ?.firstOrNull { it.name.asString() == "compoundKeyHash" }
+            ?.getter
+            .also { getter ->
+                if (getter == null) warn("Composer.compoundKeyHash not found — per-instance tracking disabled (falls back to aggregate)")
+            }
     }
 
     private val pairClass by lazy {
@@ -169,13 +216,18 @@ internal class LoupeIrTransformer(
         container.clear()
         container += recordCall
 
+        val builder = DeclarationIrBuilder(pluginContext, declaration.symbol)
+        val file = File(declaration.file.fileEntry.name).name
+        val instrumentedStatements =
+            injectStateTracking(originalStatements, declaration, recordKey(declaration, file), builder)
+
         val recordEndCall = buildRecordEndCall(declaration)
         if (recordEndCall != null) {
             // #36: wrap the original body in try/finally so duration is recorded
             // on every exit path — early returns and exceptions alike.
             // Semantics are unchanged: the body is Unit-typed.
             val tryBlock = IrBlockImpl(UNDEFINED_OFFSET, UNDEFINED_OFFSET, irBuiltIns.unitType).apply {
-                statements += originalStatements
+                statements += instrumentedStatements
             }
             val finallyBlock = IrBlockImpl(UNDEFINED_OFFSET, UNDEFINED_OFFSET, irBuiltIns.unitType).apply {
                 statements += recordEndCall
@@ -187,7 +239,7 @@ internal class LoupeIrTransformer(
                 finallyExpression = finallyBlock,
             )
         } else {
-            container += originalStatements
+            container += instrumentedStatements
         }
 
         messageCollector.report(CompilerMessageSeverity.LOGGING, "[Loupe] instrumenting: $name")
@@ -254,6 +306,7 @@ internal class LoupeIrTransformer(
             call.putValueArgument(1, irString(file))
             call.putValueArgument(2, irInt(line))
             call.putValueArgument(3, paramsArray)
+            call.putValueArgument(4, buildInstanceArg(declaration, builder))
         }
     }
 
@@ -279,7 +332,90 @@ internal class LoupeIrTransformer(
         return builder.irCall(fn).also { call ->
             call.dispatchReceiver = builder.irGetObjectValue(rc.owner.defaultType, rc)
             call.putValueArgument(0, irString(recordKey(declaration, file)))
+            call.putValueArgument(1, buildInstanceArg(declaration, builder))
         }
+    }
+
+    /**
+     * Per-instance discriminator from `$composer.compoundKeyHash`. Falls back to 0
+     * (aggregate) when the Compose runtime symbol is unavailable.
+     */
+    private fun buildInstanceArg(
+        declaration: IrSimpleFunction,
+        builder: DeclarationIrBuilder,
+    ): IrExpression {
+        val getter = compoundKeyHashGetter ?: return irInt(0)
+        val composer = declaration.valueParameters
+            .firstOrNull { it.name.asString() == COMPOSER_PARAM_NAME }
+            ?: return irInt(0)
+        return builder.irCall(getter.symbol).also { call ->
+            call.dispatchReceiver = builder.irGet(composer)
+        }
+    }
+
+    // ── Local MutableState capture ───────────────────────────────────────────
+
+    /**
+     * Emits `trackState(key, instance, name, value)` right after each local
+     * `MutableState`/`State` declaration in the executed body, so reads like
+     * `counter++` are attributed to the composable's own state rather than
+     * surfacing only as a forced recomposition.
+     */
+    private fun injectStateTracking(
+        statements: List<IrStatement>,
+        declaration: IrSimpleFunction,
+        key: String,
+        builder: DeclarationIrBuilder,
+    ): List<IrStatement> {
+        if (trackStateFn == null || stateValueGetter == null) return statements
+        val result = ArrayList<IrStatement>(statements.size * 2)
+        for (statement in statements) {
+            result += statement
+            when (statement) {
+                is IrVariable -> {
+                    if (!statement.type.isStateType()) continue
+                    val name = statement.name.asString().removeSuffix("\$delegate")
+                    buildTrackStateCall(declaration, key, name, statement, builder)?.let { result += it }
+                }
+                // `var counter by remember { mutableStateOf(0) }` lowers to a delegated
+                // local property whose backing `delegate` variable holds the MutableState.
+                is IrLocalDelegatedProperty -> {
+                    val delegate = statement.delegate
+                    if (!delegate.type.isStateType()) continue
+                    buildTrackStateCall(declaration, key, statement.name.asString(), delegate, builder)?.let { result += it }
+                }
+            }
+        }
+        return result
+    }
+
+    private fun buildTrackStateCall(
+        declaration: IrSimpleFunction,
+        key: String,
+        name: String,
+        holder: IrVariable,
+        builder: DeclarationIrBuilder,
+    ): IrExpression? {
+        val rc = runtimeClass ?: return null
+        val fn = trackStateFn ?: return null
+        val getter = stateValueGetter ?: return null
+        val value = builder.irCall(getter.symbol).also { call ->
+            call.dispatchReceiver = builder.irGet(holder)
+        }
+        return builder.irCall(fn).also { call ->
+            call.dispatchReceiver = builder.irGetObjectValue(rc.owner.defaultType, rc)
+            call.putValueArgument(0, irString(key))
+            call.putValueArgument(1, buildInstanceArg(declaration, builder))
+            call.putValueArgument(2, irString(name))
+            call.putValueArgument(3, builder.irImplicitCast(value, anyNType))
+        }
+    }
+
+    private fun IrType.isStateType(): Boolean {
+        if (this !is IrSimpleType) return false
+        val owner = classifier.owner as? IrClass ?: return false
+        val fqn = owner.fqNameWhenAvailable?.asString() ?: return false
+        return fqn == "androidx.compose.runtime.MutableState" || fqn == "androidx.compose.runtime.State"
     }
 
     // Called when buildParamsArray fails (pairCtor missing, etc.) but arrayOfFn is available.
