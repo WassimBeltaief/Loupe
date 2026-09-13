@@ -21,7 +21,7 @@ Add a single `debugImplementation`, and Loupe instruments every composable for y
 ```kotlin
 // app/build.gradle.kts
 plugins {
-    id("com.wassimbeltaief.loupe") version "1.0.0-alpha01"
+    id("com.wassimbeltaief.loupe") version "1.0.1"
 }
 
 loupe {
@@ -29,7 +29,7 @@ loupe {
 }
 
 dependencies {
-    debugImplementation("com.wassimbeltaief:loupe-runtime:1.0.0-alpha01")
+    debugImplementation("com.wassimbeltaief:loupe-runtime:1.0.1")
 }
 ```
 

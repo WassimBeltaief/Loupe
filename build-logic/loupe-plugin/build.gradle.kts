@@ -6,10 +6,10 @@ plugins {
 // Project coordinates must stay in sync with LoupeGradlePlugin's
 // getPluginArtifact() — composite-build substitution resolves by group + name.
 group = "com.wassimbeltaief"
-version = "1.0.0-alpha01"
+version = "1.0.1"
 
 mavenPublishing {
-    coordinates("com.wassimbeltaief", "loupe-plugin", "1.0.0-alpha01")
+    coordinates("com.wassimbeltaief", "loupe-plugin", "1.0.1")
     pom {
         name.set("Loupe Compiler Plugin")
         description.set("Kotlin compiler plugin that instruments @Composable functions for Loupe")

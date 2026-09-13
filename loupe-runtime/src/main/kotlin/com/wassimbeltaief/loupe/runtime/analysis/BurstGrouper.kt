@@ -58,12 +58,8 @@ object BurstGrouper {
 
     /**
      * @param records newest-first recomposition records for one composable
-     * @param burstGapNs max gap between consecutive records to be one burst
      */
-    fun group(
-        records: List<RecompositionRecord>,
-        burstGapNs: Long = DEFAULT_BURST_GAP_NS,
-    ): List<Burst> {
+    fun group(records: List<RecompositionRecord>): List<Burst> {
         if (records.isEmpty()) return emptyList()
         val total = records.size
         val bursts = mutableListOf<MutableList<RecompositionRecord>>()
@@ -72,7 +68,7 @@ object BurstGrouper {
             val newer = records[i - 1]
             val candidate = records[i]
             // records are newest-first, so newer.timestampNs >= candidate.timestampNs
-            if (newer.timestampNs - candidate.timestampNs <= burstGapNs) {
+            if (newer.timestampNs - candidate.timestampNs <= DEFAULT_BURST_GAP_NS) {
                 current += candidate
             } else {
                 bursts += current
