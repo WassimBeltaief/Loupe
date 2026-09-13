@@ -24,13 +24,13 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
 /**
- * #13: draws the heatmap — severity-coloured dotted borders plus a count badge
- * at each tracked composable's top-right corner. Rendered in a full-screen,
- * non-touchable overlay window, so it never intercepts app input.
+ * Draws the heatmap: a severity-coloured dotted border and a count badge at the
+ * top-right corner of each tracked composable. It is drawn in a full-screen,
+ * non-touchable window, so it never blocks app input.
  *
- * Badge stacking: when nested composables have badges at nearly the same
- * position, we offset the outer (larger) box's badge diagonally (down + left)
- * and add transparency so both remain visible.
+ * Badge stacking: when two nested composables have badges at almost the same
+ * position, the outer (larger) box's badge is moved down and left, and made a
+ * little transparent, so both stay visible.
  */
 @Composable
 internal fun HeatmapLayer(boxes: List<HeatmapBox>, modifier: Modifier = Modifier) {

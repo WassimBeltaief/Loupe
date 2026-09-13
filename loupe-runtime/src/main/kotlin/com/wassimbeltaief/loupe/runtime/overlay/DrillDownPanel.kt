@@ -47,8 +47,15 @@ import com.wassimbeltaief.loupe.runtime.model.ParamVerdict
 import com.wassimbeltaief.loupe.runtime.model.RecompositionHistory
 
 /**
- * #16/#17: fullscreen detail — timeline (burst-grouped) with verdict chips and
- * suggestions, parameter blame bar, and JSON export (#19). Light/cream theme.
+ * The fullscreen detail for one instance.
+ *
+ * It shows the recomposition timeline (grouped into bursts, each with verdict
+ * chips and fix suggestions), the parameter blame bar, and the Share and Copy
+ * JSON buttons.
+ *
+ * @param history the instance to inspect
+ * @param config used for the severity colours of the timeline
+ * @param onBack called when the user closes the panel
  */
 @Composable
 internal fun DrillDownPanel(
@@ -440,7 +447,7 @@ private fun BlameBar(blamedParams: List<BlamedParam>) {
     }
 }
 
-// ── Export (#19) ─────────────────────────────────────────────────────────────
+// ── Export ───────────────────────────────────────────────────────────────────
 
 @Composable
 private fun ExportButtons(history: RecompositionHistory) {

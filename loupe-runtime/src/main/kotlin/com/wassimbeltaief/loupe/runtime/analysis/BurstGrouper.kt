@@ -4,14 +4,20 @@ import com.wassimbeltaief.loupe.runtime.model.ParamVerdict
 import com.wassimbeltaief.loupe.runtime.model.RecompositionRecord
 
 /**
- * Groups a composable's recomposition records (newest-first) into "bursts":
- * sequences of recompositions within [DEFAULT_BURST_GAP_NS] of each other.
- * Bursts are the collapsed unit of the drill-down timeline.
+ * Groups recomposition records into bursts.
+ *
+ * A burst is a run of recompositions that happen close together in time. This
+ * is how the drill-down timeline stays readable: instead of showing 40 rows for
+ * one fast scroll, it shows one burst of 40.
  */
 object BurstGrouper {
 
+    /** Records closer than this are treated as one burst. */
     const val DEFAULT_BURST_GAP_NS = 200_000_000L // 200ms
 
+    /**
+     * One burst of recompositions, plus the details the timeline shows for it.
+     */
     data class Burst(
         /** Records in this burst, newest first. */
         val records: List<RecompositionRecord>,
@@ -24,7 +30,7 @@ object BurstGrouper {
         val isSingle: Boolean get() = records.size == 1
         val totalDurationNs: Long get() = records.filter { it.durationNs >= 0 }.sumOf { it.durationNs }
 
-        /** Param that changed most often across the burst — the headline cause. */
+        /** The parameter that changed most often in this burst, or null if none. */
         val dominantChangedParam: String?
             get() = records
                 .flatMap { it.params }
@@ -34,7 +40,7 @@ object BurstGrouper {
                 .maxByOrNull { it.value }
                 ?.key
 
-        /** Verdict of [dominantChangedParam] — drives its colour (never rank). */
+        /** The verdict of [dominantChangedParam]. It decides the colour, not the rank. */
         val dominantChangedVerdict: ParamVerdict
             get() {
                 val dominant = dominantChangedParam ?: return ParamVerdict.Unchanged
@@ -47,7 +53,7 @@ object BurstGrouper {
                     ?.verdict ?: ParamVerdict.Unchanged
             }
 
-        /** Names of local `MutableState` reads that changed across the burst. */
+        /** Names of local `MutableState` reads that changed in this burst. */
         val changedStateNames: List<String>
             get() = records
                 .flatMap { it.stateChanges }
@@ -57,7 +63,9 @@ object BurstGrouper {
     }
 
     /**
-     * @param records newest-first recomposition records for one composable
+     * Splits a composable's records into bursts.
+     *
+     * @param records records for one composable, newest first
      */
     fun group(records: List<RecompositionRecord>): List<Burst> {
         if (records.isEmpty()) return emptyList()
@@ -67,7 +75,7 @@ object BurstGrouper {
         for (i in 1 until records.size) {
             val newer = records[i - 1]
             val candidate = records[i]
-            // records are newest-first, so newer.timestampNs >= candidate.timestampNs
+            // The list is newest first, so newer.timestampNs >= candidate.timestampNs.
             if (newer.timestampNs - candidate.timestampNs <= DEFAULT_BURST_GAP_NS) {
                 current += candidate
             } else {
@@ -77,12 +85,12 @@ object BurstGrouper {
         }
         bursts += current
 
-        // Recomposition numbers: records are newest-first, so index i has number (total - i).
-        // A burst spanning indices [a..b] covers numbers (total - b)..(total - a).
+        // Recomposition numbers: index i has number (total - i), because the list is
+        // newest first. A burst over indices [a. .b] covers numbers (total - b). .(total - a).
         var index = 0
         return bursts.map { burst ->
-            val firstIdx = index + burst.size       // number of oldest record in burst
-            val lastIdx = index + 1                 // number of newest record in burst
+            val firstIdx = index + burst.size       // number of the oldest record
+            val lastIdx = index + 1                 // number of the newest record
             index += burst.size
             Burst(
                 records = burst,

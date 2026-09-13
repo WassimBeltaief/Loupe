@@ -12,7 +12,7 @@ import androidx.compose.ui.platform.LocalView
 import kotlinx.coroutines.delay
 
 /**
- * Opt-in host for the on-device heatmap (#13). Wrap your app content once:
+ * Turns on the heatmap by wrapping the app content once:
  *
  * ```
  * setContent {
@@ -22,22 +22,23 @@ import kotlinx.coroutines.delay
  * }
  * ```
  *
- * It exposes the composition's slot tables to Loupe and drives main-thread
- * sampling. This is the **one** Loupe feature that requires a code change —
- * everything else is zero-instrumentation. Use in debug builds only.
+ * The heatmap needs the composition slot tables to know where each composable
+ * is on screen. Compose only exposes them when it is asked to. This host does
+ * that, and samples the tables on the main thread a few times per second.
+ *
+ * This is the only Loupe feature that needs a code change. Use it in debug
+ * builds only.
  */
 @Composable
 fun LoupeHeatmapHost(content: @Composable () -> Unit) {
     val tables = remember { mutableSetOf<CompositionData>() }
     val view = LocalView.current
-    // Enable source-information collection, otherwise tooling CallGroups have no
-    // name (Recomposer.collectingSourceInformation is false by default). This is
-    // exactly what Compose's own Inspectable() does, and is required for
-    // HeatmapMatcher to resolve composable names. Must run before content().
+    // Ask Compose to collect source information, otherwise tooling groups have
+    // no names and the heatmap cannot match them. This is what Compose's own
+    // Inspectable() does. It must run before content().
     currentComposer.collectParameterInformation()
-    // The composition this host belongs to (the app's root composition). The
-    // CompositionLocal below only reaches SUBcompositions — the root must be
-    // registered explicitly, exactly as Compose's own Inspectable() does.
+    // The root composition (the app itself). The CompositionLocal below only
+    // reaches subcompositions, so the root is registered here by hand.
     val hostComposition = currentComposer.compositionData
 
     DisposableEffect(tables, view, hostComposition) {
@@ -46,8 +47,8 @@ fun LoupeHeatmapHost(content: @Composable () -> Unit) {
         onDispose { LoupeRuntime.detachInspectionTables() }
     }
 
-    // Slot-table access is main-thread only — LaunchedEffect runs on the app's
-    // composition dispatcher (main), sampled at a low, cheap rate.
+    // Slot tables may only be read on the main thread. A LaunchedEffect runs on
+    // the composition dispatcher, so that is the right place to sample.
     LaunchedEffect(tables) {
         while (true) {
             LoupeRuntime.sampleHeatmap()

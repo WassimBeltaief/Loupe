@@ -60,6 +60,21 @@ private val LAMBDA_REF_CLASS_ID = ClassId(FqName("com.wassimbeltaief.loupe.runti
 /** Compose injects the Composer parameter under this name. */
 private const val COMPOSER_PARAM_NAME = "\$composer"
 
+/**
+ * Instruments composables in the Kotlin IR.
+ *
+ * For every `@Composable` that passes [shouldInstrument], it inserts three calls:
+ * 1. `LoupeRuntime.record(...)` at the start, with the parameters of the call.
+ * 2. `LoupeRuntime.trackState(...)` after each local `MutableState`, so a state
+ *    change such as `counter++` is visible in the drill-down.
+ * 3. `LoupeRuntime.recordEnd(...)` in a `finally` block, to measure the duration.
+ *
+ * The user's own statements are never changed. They are only wrapped.
+ *
+ * Two caches matter here. The symbol lookups are `lazy`, so they are resolved
+ * once per compilation. And `record()` is inserted inside the executed branch of
+ * the Compose restart group, so skipped composables are not counted.
+ */
 internal class LoupeIrTransformer(
     private val pluginContext: IrPluginContext,
     private val messageCollector: MessageCollector,
@@ -89,7 +104,7 @@ internal class LoupeIrTransformer(
         }
     }
 
-    // #36: duration measurement counterpart to record() — emitted in a finally block
+    // Duration measurement counterpart to record(). It is emitted in a finally block.
     private val recordEndFn by lazy {
         pluginContext.referenceFunctions(
             CallableId(LOUPE_RUNTIME_CLASS_ID, Name.identifier("recordEnd"))
@@ -188,6 +203,10 @@ internal class LoupeIrTransformer(
 
     // ── Visitor ──────────────────────────────────────────────────────────────
 
+    /**
+     * Visits every function in the module. Only eligible composables are changed;
+     * everything else is left as it is.
+     */
     override fun visitSimpleFunction(declaration: IrSimpleFunction): IrStatement {
         declaration.transformChildrenVoid(this)
 
@@ -198,14 +217,14 @@ internal class LoupeIrTransformer(
 
         val recordCall = buildRecordCall(declaration) ?: return declaration
 
-        // #40: this transform runs AFTER the Compose compiler's IR lowering (our
-        // injected calls appear after startRestartGroup in the emitted bytecode).
-        // Restartable composables therefore have the shape
-        //   [ startRestartGroup(...), …, if (cond) { <real body> } else { skipToGroupEnd() }, … ]
-        // record() must only fire when the body ACTUALLY executes — inside the
-        // true branch — otherwise skipped invocations are counted as recompositions.
-        // Falls back to the whole body when the pattern isn't found (non-restartable
-        // composables, unexpected shapes): invocation-counting, never a crash.
+        // This transform runs AFTER the Compose compiler's IR lowering, so the
+        // injected calls appear after startRestartGroup in the bytecode.
+        // A restartable composable has the shape
+        //   [ startRestartGroup(...), ..., if (cond) { <real body> } else { skipToGroupEnd() }, ... ]
+        // record() must only run when the body really executes, inside the true
+        // branch, otherwise skipped invocations would be counted as recompositions.
+        // When the shape is not found (non-restartable or unusual composables) the
+        // whole body is used, so it counts invocations and never crashes.
         val container = findExecutedBodyContainer(body, name) ?: body.statements
 
         val originalStatements = container.toList()
@@ -219,9 +238,9 @@ internal class LoupeIrTransformer(
 
         val recordEndCall = buildRecordEndCall(declaration)
         if (recordEndCall != null) {
-            // #36: wrap the original body in try/finally so duration is recorded
-            // on every exit path — early returns and exceptions alike.
-            // Semantics are unchanged: the body is Unit-typed.
+            // Wrap the original body in try/finally, so the duration is recorded on
+            // every exit path, including early returns and exceptions. The body is
+            // Unit-typed, so the semantics do not change.
             val tryBlock = IrBlockImpl(UNDEFINED_OFFSET, UNDEFINED_OFFSET, irBuiltIns.unitType).apply {
                 statements += instrumentedStatements
             }
@@ -243,10 +262,12 @@ internal class LoupeIrTransformer(
     }
 
     /**
-     * #40: finds the statement list of the restart-group's executed branch —
-     * the `if (…) { <body> } else { skipToGroupEnd() }` the Compose compiler
-     * lowers restartable composables into. Returns null when the pattern is
-     * absent (non-restartable composables, non-standard shapes).
+     * Finds the statement list that actually runs, inside the restart group.
+     *
+     * A restartable composable is lowered to something like
+     * `if (...) { body } else { skipToGroupEnd() }`. Injecting into the `if`
+     * branch means a skipped composable is not recorded. Returns null when the
+     * shape is not found, for example for a non-restartable composable.
      */
     private fun findExecutedBodyContainer(body: IrBlockBody, name: String): MutableList<IrStatement>? {
         val skipCheck = body.statements.filterIsInstance<IrWhen>().firstOrNull { whenExpr ->
@@ -257,12 +278,14 @@ internal class LoupeIrTransformer(
         return (skipCheck.branches.firstOrNull()?.result as? IrBlock)?.statements
     }
 
+    // True when this expression calls skipToGroupEnd, directly or inside a block.
     private fun IrExpression.containsSkipToGroupEnd(): Boolean = when (this) {
         is IrCall -> symbol.owner.name.asString() == "skipToGroupEnd"
         is IrBlock -> statements.any { (it as? IrExpression)?.containsSkipToGroupEnd() == true }
         else -> false
     }
 
+    /** Decides whether this function should be instrumented. See the class doc for the rules. */
     private fun shouldInstrument(declaration: IrSimpleFunction): Boolean {
         if (!declaration.hasAnnotation(COMPOSABLE_FQN)) return false
         if (declaration.isInline) return false        // inline has no discrete body post-inlining
@@ -278,6 +301,7 @@ internal class LoupeIrTransformer(
 
     // ── Record call builder ──────────────────────────────────────────────────
 
+    /** Builds the `LoupeRuntime.record(...)` call for one composable. */
     private fun buildRecordCall(declaration: IrSimpleFunction): IrExpression? {
         val rc = runtimeClass ?: return null
         val fn = recordFn ?: return null
@@ -306,20 +330,22 @@ internal class LoupeIrTransformer(
         }
     }
 
-    // #37: qualify the key with the file name so same-named composables in
-    // different files (and most overloads) don't merge into one history.
-    // Prefix is dropped when file == function (the common "ProductCard.kt
-    // hosts ProductCard" case) to keep the overlay display clean.
-    // Residual collision: same file name in different packages + same
-    // function name — accepted for readability of the key as display string.
+    /**
+     * Builds the key of a composable as `FileName.Function`.
+     *
+     * The file prefix keeps two composables with the same name in different files
+     * apart. It is dropped when the file and the function have the same name, so
+     * `ProductCard.kt` stays `ProductCard` and the overlay stays readable.
+     */
     private fun recordKey(declaration: IrSimpleFunction, file: String): String {
         val name = declaration.name.asString()
         val fileBase = file.removeSuffix(".kt")
         return if (fileBase == name) name else "$fileBase.$name"
     }
 
-    // ── recordEnd(key) call — injected into the finally block (#36) ─────────
+    // ── recordEnd(key) call — injected into the finally block ────────────────
 
+    /** Builds the `LoupeRuntime.recordEnd(...)` call that closes the duration measurement. */
     private fun buildRecordEndCall(declaration: IrSimpleFunction): IrExpression? {
         val rc = runtimeClass ?: return null
         val fn = recordEndFn ?: return null
@@ -385,6 +411,7 @@ internal class LoupeIrTransformer(
         return result
     }
 
+    /** Builds the `trackState(key, instance, name, value)` call for one state holder. */
     private fun buildTrackStateCall(
         declaration: IrSimpleFunction,
         key: String,
@@ -407,6 +434,7 @@ internal class LoupeIrTransformer(
         }
     }
 
+    /** True for `androidx.compose.runtime.MutableState` and `State`. */
     private fun IrType.isStateType(): Boolean {
         if (this !is IrSimpleType) return false
         val owner = classifier.owner as? IrClass ?: return false
@@ -430,6 +458,13 @@ internal class LoupeIrTransformer(
 
     // ── Params array: arrayOf("name" to value, ...) ─────────────────────────
 
+    /**
+     * Builds the `arrayOf("name" to value, ...)` argument for `record()`.
+     *
+     * Redacted types are stored as "[redacted]", function types as their identity
+     * hash, and everything else as itself. Compose's own `$composer`, `$changed`
+     * and `$default` parameters are skipped.
+     */
     private fun buildParamsArray(declaration: IrSimpleFunction, builder: DeclarationIrBuilder): IrExpression? {
         val pc = pairClass ?: return null
         val ctor = pairCtor ?: return null
@@ -443,9 +478,8 @@ internal class LoupeIrTransformer(
 
         val pairs = userParams.map { param ->
             val nameArg = irString(param.name.asString())
-            // #20: @LoupeRedact types are never captured — privacy wins over everything.
-            // Lambdas/callable refs: capture identity — instances are never equal across calls.
-            // Fall back to value capture if System.identityHashCode is unavailable (stripped JDK).
+            // A redacted type is never captured. Function values are captured by
+            // identity, because two lambdas are never equal by value.
             val rawValue: IrExpression = when {
                 param.type.hasRedactAnnotation() -> irString("[redacted]")
                 param.type.isFunctionLikeType() -> buildIdentityHashCode(param, builder) ?: builder.irGet(param)
@@ -467,6 +501,7 @@ internal class LoupeIrTransformer(
 
     // ── LambdaRef(System.identityHashCode(param)) ────────────────────────────
 
+    /** Wraps a function value in `LambdaRef(identityHashCode(value))`. */
     private fun buildIdentityHashCode(param: IrValueParameter, builder: DeclarationIrBuilder): IrExpression? {
         val fn = identityHashCodeFn ?: return null
         val hashCall = builder.irCall(fn.symbol).also { call ->
@@ -480,12 +515,16 @@ internal class LoupeIrTransformer(
 
     // ── Type check ───────────────────────────────────────────────────────────
 
-    // #20: true when the param's type is annotated @LoupeRedact
+    /** True when the parameter type is annotated `@LoupeRedact`. */
     private fun IrType.hasRedactAnnotation(): Boolean {
         val owner = (this as? IrSimpleType)?.classifier?.owner
         return (owner as? IrAnnotationContainer)?.hasAnnotation(LOUPE_REDACT_FQN) == true
     }
 
+    /**
+     * True for function types: lambdas, callable references and suspend lambdas.
+     * A type parameter is also checked, through its upper bounds.
+     */
     private fun IrType.isFunctionLikeType(): Boolean {
         if (this !is IrSimpleType) return false
         return when (val sym = classifier) {
@@ -506,9 +545,11 @@ internal class LoupeIrTransformer(
 
     // ── IR constant helpers ──────────────────────────────────────────────────
 
+    /** Builds a string constant in the IR. */
     private fun irString(value: String): IrExpression =
         IrConstImpl.string(UNDEFINED_OFFSET, UNDEFINED_OFFSET, irBuiltIns.stringType, value)
 
+    /** Builds an int constant in the IR. */
     private fun irInt(value: Int): IrExpression =
         IrConstImpl.int(UNDEFINED_OFFSET, UNDEFINED_OFFSET, irBuiltIns.intType, value)
 }
