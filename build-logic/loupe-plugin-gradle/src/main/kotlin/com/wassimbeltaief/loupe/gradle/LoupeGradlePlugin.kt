@@ -99,6 +99,6 @@ class LoupeGradlePlugin : KotlinCompilerPluginSupportPlugin {
         // Must match the coordinates declared in build-logic/loupe-plugin/build.gradle.kts
         const val GROUP_ID = "com.wassimbeltaief"
         const val PLUGIN_ARTIFACT_ID = "loupe-plugin"
-        const val VERSION = "1.0.1"
+        const val VERSION = "1.1.0"
     }
 }

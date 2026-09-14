@@ -5,7 +5,7 @@ plugins {
 }
 
 group = "com.wassimbeltaief"
-version = "1.0.1"
+version = "1.1.0"
 
 dependencies {
     // Stable KGP API surface only — never kotlin-gradle-plugin internals
