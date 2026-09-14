@@ -15,6 +15,8 @@ dependencies {
     implementation(project(":loupe-plugin"))
     // compileOnly: present on the consumer's classpath whenever an Android plugin is applied
     compileOnly(libs.android.tools.gradle)
+
+    testImplementation(libs.junit4)
 }
 
 gradlePlugin {

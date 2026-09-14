@@ -6,6 +6,7 @@ import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import com.wassimbeltaief.loupe.runtime.LoupeConfig
 import com.wassimbeltaief.loupe.testing.LoupeTestRule
 import com.wassimbeltaief.loupe.testing.atLeast
 import com.wassimbeltaief.loupe.testing.atMost
@@ -22,7 +23,16 @@ import org.junit.runner.RunWith
 class AlbumRecompositionTest {
 
     @get:Rule
-    val rule = LoupeTestRule()
+    val rule = LoupeTestRule(
+        // Same bands as SampleApplication, so the CI table agrees with the overlay.
+        config = LoupeConfig(
+            overlayEnabled = false,
+            heatmapEnabled = false,
+            logcatEnabled = false,
+            hotThreshold = 10,
+            warmThreshold = 3,
+        ),
+    )
 
     private fun launchApp() {
         rule.setContent { LoupeSampleTheme { AlbumApp() } }
@@ -69,10 +79,12 @@ class AlbumRecompositionTest {
 
     // ── Unhappy path ──────────────────────────────────────────────────────────
 
-    // The comment area reads a viewmodel state that ticks every second, so it
-    // recomposes continuously even though the comments themselves never change.
+    // Documents the sample's deliberately unhealthy comment area: the ViewModel
+    // bundles a 1-second "listening now" counter into the same state the
+    // comments read, so the whole section recomposes once a second even though
+    // the comments never change. Loupe's report blames that `state`.
     @Test
-    fun commentsSectionRecomposesEverySecond() {
+    fun commentsSectionRecomposesWhileTheListenerCounterTicks() {
         launchApp()
         rule.onNodeWithText("Midnight Signals").performClick()
         rule.waitForIdle()
@@ -85,6 +97,34 @@ class AlbumRecompositionTest {
         }
 
         rule.onNodeWithTag("CommentsSection").shouldRecompose(atLeast(3))
+    }
+
+    // Clicking like changes `liked`/`likes`, so LikeButton_1 must recompose:
+    // exactly once per click. This is a budget test, not a "must not recompose"
+    // test — 12 clicks must not cost more than 13 compositions (initial + one
+    // per click).
+    @Test
+    fun likeButtonRecomposesAtMostOncePerClick() {
+        launchApp()
+        repeat(12) {
+            rule.onNodeWithTag("LikeButton_1").performClick()
+            rule.waitForIdle()
+        }
+        rule.onNodeWithTag("LikeButton_1").shouldRecompose(atMost(13))
+    }
+
+    // Same budget on the detail page: navigating to detail, then rapidly
+    // toggling LikeButton_detail twelve times.
+    @Test
+    fun detailLikeButtonRecomposesAtMostOncePerClick() {
+        launchApp()
+        rule.onNodeWithText("Midnight Signals").performClick()
+        rule.waitForIdle()
+        repeat(12) {
+            rule.onNodeWithTag("LikeButton_detail").performClick()
+            rule.waitForIdle()
+        }
+        rule.onNodeWithTag("LikeButton_detail").shouldRecompose(atMost(13))
     }
 
     // ── Interaction tests ─────────────────────────────────────────────────────

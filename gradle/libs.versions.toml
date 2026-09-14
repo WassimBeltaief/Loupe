@@ -11,6 +11,7 @@ kotlin-compiler       = { module = "org.jetbrains.kotlin:kotlin-compiler-embedda
 kotlin-gradle-plugin-api = { module = "org.jetbrains.kotlin:kotlin-gradle-plugin-api",     version.ref = "kotlin" }
 android-tools-gradle  = { module = "com.android.tools.build:gradle",                       version.ref = "android-gradle-plugin" }
 kotlin-test           = { module = "org.jetbrains.kotlin:kotlin-test",                     version.ref = "kotlin" }
+junit4                = { module = "junit:junit",                                           version = "4.13.2" }
 kct-core              = { module = "dev.zacsweers.kctfork:core",                           version.ref = "kct" }
 coroutines-core       = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-core",        version.ref = "coroutines" }
 coroutines-android    = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-android",     version.ref = "coroutines" }

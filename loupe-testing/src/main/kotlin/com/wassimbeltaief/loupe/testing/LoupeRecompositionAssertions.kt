@@ -4,6 +4,7 @@ import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.SemanticsNodeInteraction
 import com.wassimbeltaief.loupe.runtime.LoupeRuntime
 import com.wassimbeltaief.loupe.runtime.model.CompositionHistory
+import java.util.Locale
 
 /**
  * Asserts that this composable was composed exactly once — never recomposed.
@@ -14,16 +15,17 @@ import com.wassimbeltaief.loupe.runtime.model.CompositionHistory
  * The node must carry a [Modifier.testTag][androidx.compose.ui.Modifier] whose value
  * matches the composable's function name (or its full `FileName.FunctionName` Loupe key).
  *
- * Throws [AssertionError] with a CI table on failure.
+ * On failure it throws a [LoupeAssertionError] carrying the blame and cost for this
+ * composable only. [LoupeRunListener] turns it into the end-of-run report.
  */
 fun SemanticsNodeInteraction.shouldNeverRecompose() {
     val (name, history) = resolveHistory()
-    val count = history.totalCompositions
-    if (count != 1) {
-        val table = CiTablePrinter.format(LoupeRuntime.snapshot())
-        throw AssertionError(
-            "shouldNeverRecompose() failed for '$name': " +
-            "composition count is $count (expected 1 — initial only)\n$table"
+    if (history.totalCompositions != 1) {
+        throw loupeFailure(
+            name = name,
+            history = history,
+            expected = "never recompose",
+            actual = "${history.totalCompositions} compositions",
         )
     }
 }
@@ -47,12 +49,12 @@ fun SemanticsNodeInteraction.shouldRecomposeOnce() = shouldRecompose(times(2))
  */
 fun SemanticsNodeInteraction.shouldRecompose(matcher: CompositionMatcher) {
     val (name, history) = resolveHistory()
-    val count = history.totalCompositions
-    if (!matcher.matches(count)) {
-        val table = CiTablePrinter.format(LoupeRuntime.snapshot())
-        throw AssertionError(
-            "shouldRecompose(${matcher.describe()}) failed for '$name': " +
-            "composition count is $count\n$table"
+    if (!matcher.matches(history.totalCompositions)) {
+        throw loupeFailure(
+            name = name,
+            history = history,
+            expected = matcher.describe(),
+            actual = "${history.totalCompositions} compositions",
         )
     }
 }
@@ -64,10 +66,11 @@ fun SemanticsNodeInteraction.shouldRecompose(matcher: CompositionMatcher) {
 fun SemanticsNodeInteraction.maxRecompositionTimeInMs(maxMs: Float) {
     val (name, history) = resolveHistory()
     if (history.totalDurationMs > maxMs) {
-        val table = CiTablePrinter.format(LoupeRuntime.snapshot())
-        throw AssertionError(
-            "maxRecompositionTimeInMs($maxMs) failed for '$name': " +
-            "took ${"%.1f".format(java.util.Locale.US, history.totalDurationMs)}ms\n$table"
+        throw loupeFailure(
+            name = name,
+            history = history,
+            expected = "total duration ≤ ${trim(maxMs)}ms",
+            actual = "${trim(history.totalDurationMs)}ms",
         )
     }
 }
@@ -80,15 +83,18 @@ fun SemanticsNodeInteraction.maxRecompositionTimeInMs(maxMs: Float) {
  * Resolution order:
  * 1. Exact match on the full key
  * 2. Suffix match for `FileName.FunctionName` keys (matches `".$tag"` suffix)
- * 3. Zero matches → error with recorded key list + CI table
- * 4. Multiple suffix matches → error with ambiguous key list + disambiguation hint
+ * 3. Zero matches → error with the recorded key list
+ * 4. Multiple suffix matches → error with the ambiguous key list and a hint
+ *
+ * Lookup failures happen before any history is known, so they throw a plain
+ * [AssertionError] with no blame data.
  */
 internal fun SemanticsNodeInteraction.resolveHistory(): Pair<String, CompositionHistory> {
     val config = fetchSemanticsNode().config
     val tag = if (SemanticsProperties.TestTag in config) config[SemanticsProperties.TestTag]
     else throw AssertionError(
         "The SemanticsNode has no TestTag. " +
-        "Add Modifier.testTag(\"YourFunctionName\") to the composable under test."
+            "Add Modifier.testTag(\"YourFunctionName\") to the composable under test."
     )
 
     val snap = LoupeRuntime.snapshot()
@@ -107,17 +113,38 @@ internal fun SemanticsNodeInteraction.resolveHistory(): Pair<String, Composition
         0 -> { /* fall through */ }
         else -> throw AssertionError(
             "Ambiguous: test tag '$tag' matches multiple composable keys:\n" +
-            suffixMatches.joinToString("\n") { "  ${it.key}" } +
-            "\nUse the full key (e.g. \"FileName.$tag\") as the testTag value.\n" +
-            CiTablePrinter.format(snap)
+                suffixMatches.joinToString("\n") { "  ${it.key}" } +
+                "\nUse the full key (e.g. \"FileName.$tag\") as the testTag value."
         )
     }
 
-    // 3. No match
     throw AssertionError(
-        "No Loupe data found for composable tagged '$tag'.\n" +
-        "Recorded composables: ${composables.keys.sorted()}\n" +
-        "Verify the Loupe compiler plugin is applied to the module under test.\n" +
-        CiTablePrinter.format(snap)
+        "No Loupe data found for composable tagged '$tag'. " +
+            "Recorded composables: ${composables.keys.sorted()}. " +
+            "Verify the Loupe compiler plugin is applied to the module under test."
     )
 }
+
+/** Builds a [LoupeAssertionError] with the active thresholds and the resolved blame. */
+private fun loupeFailure(
+    name: String,
+    history: CompositionHistory,
+    expected: String,
+    actual: String,
+): LoupeAssertionError {
+    val snap = LoupeRuntime.snapshot()
+    return LoupeAssertionError(
+        message = "Loupe assertion failed for '$name': expected $expected, got $actual",
+        composableKey = name,
+        expected = expected,
+        actual = actual,
+        blamedParams = history.blamedParams,
+        totalCompositions = history.totalCompositions,
+        windowRecompositions = history.windowRecompositions,
+        totalDurationMs = history.totalDurationMs,
+        hotThreshold = snap.hotThreshold,
+        warmThreshold = snap.warmThreshold,
+    )
+}
+
+private fun trim(value: Float): String = "%.1f".format(Locale.US, value)
