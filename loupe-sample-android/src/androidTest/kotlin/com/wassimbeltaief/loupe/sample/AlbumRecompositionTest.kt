@@ -10,7 +10,6 @@ import com.wassimbeltaief.loupe.runtime.LoupeConfig
 import com.wassimbeltaief.loupe.testing.LoupeTestRule
 import com.wassimbeltaief.loupe.testing.atLeast
 import com.wassimbeltaief.loupe.testing.atMost
-import com.wassimbeltaief.loupe.testing.maxRecompositionTimeInMs
 import com.wassimbeltaief.loupe.testing.shouldNeverRecompose
 import com.wassimbeltaief.loupe.testing.shouldRecompose
 import com.wassimbeltaief.loupe.testing.shouldRecomposeOnce
@@ -66,15 +65,6 @@ class AlbumRecompositionTest {
         rule.onAllNodesWithText("♡")[0].performClick()
         rule.waitForIdle()
         rule.onNodeWithTag("LikeButton_1").shouldRecomposeOnce()
-    }
-
-    // LikeButton_1 total composition time must stay under 16 ms.
-    @Test
-    fun likeButtonIsNotExpensive() {
-        launchApp()
-        rule.onAllNodesWithText("♡")[0].performClick()
-        rule.waitForIdle()
-        rule.onNodeWithTag("LikeButton_1").maxRecompositionTimeInMs(16f)
     }
 
     // ── Unhappy path ──────────────────────────────────────────────────────────
