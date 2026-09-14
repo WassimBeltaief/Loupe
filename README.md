@@ -1,6 +1,6 @@
 # Loupe
 
-**See _why_ your Compose UI recomposes — on device, with one dependency.**
+**See _why_ your Compose UI recomposes, on device, with one dependency.**
 
 Add a single `debugImplementation`, and Loupe instruments every composable for you: a live overlay ranks the hottest ones, and the drill-down tells you exactly which parameter (or local state) caused each recomposition. No code changes, no Android Studio, no USB.
 
@@ -60,9 +60,9 @@ override fun onCreate() {
 }
 ```
 
-The compiler plugin only touches **debug builds** — release artifacts are untouched. The overlay needs the `SYSTEM_ALERT_WINDOW` permission; Logcat prints the exact `adb` command if it is missing.
+The compiler plugin only touches **debug builds**, release artifacts are untouched. The overlay needs the `SYSTEM_ALERT_WINDOW` permission; Logcat prints the exact `adb` command if it is missing.
 
-Heatmap borders are the only opt-in part — wrap your content once:
+Heatmap borders are the only opt-in part, wrap your content once:
 
 ```kotlin
 LoupeHeatmapHost { App() }
@@ -121,7 +121,7 @@ Pass a config to align the report's HOT/WARM bands with the overlay:
 
 The count is the **total number of compositions, including the initial one**.
 `times(1)` means "composed once, never recomposed"; 12 clicks that each change
-the data are `shouldRecompose(atMost(13))` — initial plus one per click.
+the data are `shouldRecompose(atMost(13))`, initial plus one per click.
 
 How a tag becomes a history: `Modifier.testTag("ProductCard")` first matches the
 composable's full Loupe key (e.g. `ProductCardKt.ProductCard`), then falls back
@@ -131,7 +131,7 @@ several instances share the name.
 ### What you get on failure
 
 A failing assertion throws a `LoupeAssertionError` carrying the blame and cost
-for the composable under test, and the end of the run prints one compact report —
+for the composable under test, and the end of the run prints one compact report,
 in Logcat on device and in the Gradle console in CI:
 
 ```
