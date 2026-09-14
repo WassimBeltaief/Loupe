@@ -6,8 +6,8 @@ import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import com.wassimbeltaief.loupe.runtime.LoupeConfig
 import com.wassimbeltaief.loupe.testing.LoupeTestRule
-import com.wassimbeltaief.loupe.testing.atLeast
 import com.wassimbeltaief.loupe.testing.atMost
 import com.wassimbeltaief.loupe.testing.maxRecompositionTimeInMs
 import com.wassimbeltaief.loupe.testing.shouldNeverRecompose
@@ -22,7 +22,16 @@ import org.junit.runner.RunWith
 class AlbumRecompositionTest {
 
     @get:Rule
-    val rule = LoupeTestRule()
+    val rule = LoupeTestRule(
+        // Same bands as SampleApplication, so the CI table agrees with the overlay.
+        config = LoupeConfig(
+            overlayEnabled = false,
+            heatmapEnabled = false,
+            logcatEnabled = false,
+            hotThreshold = 10,
+            warmThreshold = 3,
+        ),
+    )
 
     private fun launchApp() {
         rule.setContent { LoupeSampleTheme { AlbumApp() } }
@@ -69,10 +78,14 @@ class AlbumRecompositionTest {
 
     // ── Unhappy path ──────────────────────────────────────────────────────────
 
-    // The comment area reads a viewmodel state that ticks every second, so it
-    // recomposes continuously even though the comments themselves never change.
+    // The comments are identical on every recomposition, so the section should
+    // never recompose while the screen stays open.
+    //
+    // This test FAILS on purpose: the ViewModel bundles a 1-second "listening
+    // now" counter into the same state the comments read, so the whole section
+    // recomposes once a second. Loupe's failure report blames that state.
     @Test
-    fun commentsSectionRecomposesEverySecond() {
+    fun commentsSectionShouldNotRecomposeWhenCommentsAreUnchanged() {
         launchApp()
         rule.onNodeWithText("Midnight Signals").performClick()
         rule.waitForIdle()
@@ -84,7 +97,35 @@ class AlbumRecompositionTest {
             rule.waitForIdle()
         }
 
-        rule.onNodeWithTag("CommentsSection").shouldRecompose(atLeast(3))
+        rule.onNodeWithTag("CommentsSection").shouldNeverRecompose()
+    }
+
+    // This test FAILS on purpose: rapidly toggling LikeButton_1 twelve times
+    // drives it above the HOT threshold (10×/window). Loupe blames the `liked`
+    // and `likes` params that genuinely change on every click.
+    @Test
+    fun likeButtonShouldStayStableWhenSpammed() {
+        launchApp()
+        repeat(12) {
+            rule.onNodeWithTag("LikeButton_1").performClick()
+            rule.waitForIdle()
+        }
+        rule.onNodeWithTag("LikeButton_1").shouldNeverRecompose()
+    }
+
+    // This test FAILS on purpose: same spam pattern as the grid like button,
+    // but on the detail page. Navigating to detail then rapidly toggling
+    // LikeButton_detail twelve times pushes it above the HOT threshold.
+    @Test
+    fun detailLikeButtonShouldStayStableWhenSpammed() {
+        launchApp()
+        rule.onNodeWithText("Midnight Signals").performClick()
+        rule.waitForIdle()
+        repeat(12) {
+            rule.onNodeWithTag("LikeButton_detail").performClick()
+            rule.waitForIdle()
+        }
+        rule.onNodeWithTag("LikeButton_detail").shouldNeverRecompose()
     }
 
     // ── Interaction tests ─────────────────────────────────────────────────────

@@ -23,6 +23,23 @@ class LoupeGradlePlugin : KotlinCompilerPluginSupportPlugin {
     /** Registers the `loupe { }` extension. */
     override fun apply(target: Project) {
         target.extensions.create("loupe", LoupeExtension::class.java)
+        registerResultsReport(target)
+    }
+
+    /**
+     * Registers `printLoupeTestResults` and finalizes every connected test task
+     * with it. A finalizer runs even when the test task fails, which is exactly
+     * when the report matters most.
+     */
+    private fun registerResultsReport(project: Project) {
+        val report = project.tasks.register("printLoupeTestResults", LoupeResultsTask::class.java) { task ->
+            task.resultsDir.set(project.layout.buildDirectory.dir("outputs/androidTest-results"))
+        }
+        project.tasks.configureEach { task ->
+            if (task.name.startsWith("connected") && task.name.endsWith("AndroidTest")) {
+                task.finalizedBy(report)
+            }
+        }
     }
 
     override fun getCompilerPluginId(): String = COMPILER_PLUGIN_ID

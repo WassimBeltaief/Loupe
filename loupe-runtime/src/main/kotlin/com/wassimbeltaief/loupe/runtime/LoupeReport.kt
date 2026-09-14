@@ -17,4 +17,8 @@ data class LoupeReport(
     val warmComposables: List<CompositionHistory>,
     /** Per-instance histories for composables that carry a `Modifier.testTag`. Keyed by the tag string. */
     val instances: Map<String, CompositionHistory> = emptyMap(),
+    /** Hot threshold from the active [LoupeConfig], so reports can be rendered consistently. */
+    val hotThreshold: Int = 16,
+    /** Warm threshold from the active [LoupeConfig], so reports can be rendered consistently. */
+    val warmThreshold: Int = 4,
 )

@@ -254,6 +254,8 @@ object LoupeRuntime {
             hotComposables = hot,
             warmComposables = warm,
             instances = tagged,
+            hotThreshold = config.hotThreshold,
+            warmThreshold = config.warmThreshold,
         )
     }
 
@@ -279,6 +281,8 @@ object LoupeRuntime {
             hotComposables = hot,
             warmComposables = warm,
             instances = tagged,
+            hotThreshold = config.hotThreshold,
+            warmThreshold = config.warmThreshold,
         )
     }
 

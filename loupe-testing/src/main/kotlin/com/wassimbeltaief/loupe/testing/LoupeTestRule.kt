@@ -16,8 +16,9 @@ import org.junit.runners.model.Statement
  * - Configures Loupe with overlay, heatmap, and logcat disabled (safe for CI)
  * - Resets the registry so each test starts with a clean slate
  *
- * On test failure it prints the full CI summary table to stdout so every failure log
- * includes recomposition data.
+ * It does not print anything itself. Failures are reported once, at the end of the
+ * run, by [LoupeRunListener], which the AndroidX runner discovers automatically
+ * through `META-INF/services`.
  *
  * Usage:
  * ```kotlin
@@ -37,30 +38,19 @@ import org.junit.runners.model.Statement
  */
 class LoupeTestRule(
     private val delegate: ComposeContentTestRule = createComposeRule(),
+    private val config: LoupeConfig = LoupeConfig(
+        overlayEnabled = false,
+        heatmapEnabled = false,
+        logcatEnabled = false,
+    ),
 ) : ComposeContentTestRule by delegate {
 
     override fun apply(base: Statement, description: Description): Statement {
         val loupeStatement = object : Statement() {
             override fun evaluate() {
-                LoupeRuntime.configure(
-                    LoupeConfig(
-                        overlayEnabled = false,
-                        heatmapEnabled = false,
-                        logcatEnabled = false,
-                    )
-                )
+                LoupeRuntime.configure(config)
                 LoupeRuntime.reset()
-                var failure: Throwable? = null
-                try {
-                    base.evaluate()
-                } catch (e: Throwable) {
-                    failure = e
-                    throw e
-                } finally {
-                    if (failure != null) {
-                        println(CiTablePrinter.format(LoupeRuntime.snapshot()))
-                    }
-                }
+                base.evaluate()
             }
         }
         // Delegate wraps loupeStatement so the Compose Activity lifecycle is still managed
