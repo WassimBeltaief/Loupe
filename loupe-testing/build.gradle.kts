@@ -6,7 +6,7 @@ plugins {
 }
 
 mavenPublishing {
-    coordinates("com.wassimbeltaief", "loupe-testing", "1.0.1")
+    coordinates("com.wassimbeltaief", "loupe-testing", "1.1.0")
     pom {
         name.set("Loupe Testing")
         description.set("Compose recomposition assertion DSL for Jetpack Compose tests")
