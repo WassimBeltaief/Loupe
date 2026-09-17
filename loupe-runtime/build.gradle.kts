@@ -6,7 +6,7 @@ plugins {
 }
 
 mavenPublishing {
-    coordinates("com.wassimbeltaief", "loupe-runtime", "1.0.1")
+    coordinates("com.wassimbeltaief", "loupe-runtime", "1.1.0")
     pom {
         name.set("Loupe Runtime")
         description.set("Zero-instrumentation recomposition debugger for Jetpack Compose")

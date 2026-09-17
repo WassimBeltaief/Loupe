@@ -40,7 +40,7 @@ Add a single `debugImplementation`, and Loupe instruments every composable for y
 ```kotlin
 // app/build.gradle.kts
 plugins {
-    id("com.wassimbeltaief.loupe") version "1.0.1"
+    id("com.wassimbeltaief.loupe") version "1.1.0"
 }
 
 loupe {
@@ -48,7 +48,7 @@ loupe {
 }
 
 dependencies {
-    debugImplementation("com.wassimbeltaief:loupe-runtime:1.0.1")
+    debugImplementation("com.wassimbeltaief:loupe-runtime:1.1.0")
 }
 ```
 
@@ -81,7 +81,7 @@ you want to assert on:
 ```kotlin
 // app/build.gradle.kts
 dependencies {
-    androidTestImplementation("com.wassimbeltaief:loupe-testing:1.0.1")
+    androidTestImplementation("com.wassimbeltaief:loupe-testing:1.1.0")
 }
 ```
 
